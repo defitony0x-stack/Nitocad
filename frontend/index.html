@@ -741,26 +741,35 @@ import { STLLoader } from "three/addons/loaders/STLLoader.js";
     renderer.render(scene, camera);
   }
   function loadSTL(url){
-    new STLLoader().load(url, function(geometry){
-      if(currentMesh) scene.remove(currentMesh);
-      const material = new THREE.MeshPhongMaterial({ color: 0xD3541F, specular: 0x111111, shininess: 150 });
-      currentMesh = new THREE.Mesh(geometry, material);
-      geometry.computeBoundingBox();
-      geometry.center();
-      const bbox = geometry.boundingBox;
-      const maxDim = Math.max(bbox.max.x - bbox.min.x, bbox.max.y - bbox.min.y, bbox.max.z - bbox.min.z);
-      const scale = 80 / maxDim;
-      currentMesh.scale.set(scale, scale, scale);
-      scene.add(currentMesh);
-      camera.position.set(50, 50, 50);
-      controls.target.set(0, 0, 0);
-      controls.update();
-    });
+    new STLLoader().load(
+      url,
+      function onLoad(geometry){
+        if(currentMesh) scene.remove(currentMesh);
+        const material = new THREE.MeshPhongMaterial({ color: 0xD3541F, specular: 0x111111, shininess: 150 });
+        currentMesh = new THREE.Mesh(geometry, material);
+        geometry.computeBoundingBox();
+        geometry.center();
+        const bbox = geometry.boundingBox;
+        const maxDim = Math.max(bbox.max.x - bbox.min.x, bbox.max.y - bbox.min.y, bbox.max.z - bbox.min.z);
+        const scale = 80 / maxDim;
+        currentMesh.scale.set(scale, scale, scale);
+        scene.add(currentMesh);
+        camera.position.set(50, 50, 50);
+        controls.target.set(0, 0, 0);
+        controls.update();
+      },
+      undefined,
+      function onError(err){
+        // Without this, a 404/CORS'd/malformed STL fails silently and the
+        // preview pane just stays an empty gray box with no signal why.
+        console.error('STL load failed for', url, err);
+        statusEl.classList.add('err');
+        statusEl.textContent = 'Generated, but the 3D preview failed to load.';
+      }
+    );
   }
 
   function renderResult(base, data){
-    resultsEl.classList.add('active');
-
     const p = data.parameters || {};
     let rows = `<div class="row"><span>part_type</span><b>${p.part_type}</b></div>`;
     for(const [k, v] of Object.entries(p.parameters || {})){
@@ -843,6 +852,11 @@ import { STLLoader } from "three/addons/loaders/STLLoader.js";
         throw new Error(data.error || data.detail || `Generation failed (HTTP ${res.status}).`);
       }
       statusEl.textContent = 'Done.';
+      // #viewer lives inside #demoResults, which is display:none until
+      // this class is added - initViewer() measures clientWidth/clientHeight,
+      // so the panel must be visible *before* we initialize the renderer,
+      // otherwise it sizes itself to 0x0 and nothing ever paints.
+      resultsEl.classList.add('active');
       if(!scene) initViewer();
       renderResult(base, data);
     } catch(err){
