@@ -649,11 +649,11 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { STLLoader } from "three/addons/loaders/STLLoader.js";
 (function(){
   // ---------- Backend wiring for the live demo ----------
-  // Fill this in once you've deployed the Railway backend, then this
-  // whole config box stays hidden forever for regular visitors - they
-  // never see or need to know an API endpoint exists. Same idea as
-  // Stitchfren's hardcoded production URL.
-  const DEFAULT_API_BASE = "";
+  // Confirmed live 2026-08-05 (curl POST /api/keys/generate returned a
+  // real key). Regular visitors now work out of the box - the hidden
+  // config box (?config=1) still exists for pointing at a different
+  // backend later without a redeploy.
+  const DEFAULT_API_BASE = "https://nitocad-production.up.railway.app";
 
   const demoCfg = document.getElementById('demoCfg');
   const apiBaseInput = document.getElementById('apiBase');
