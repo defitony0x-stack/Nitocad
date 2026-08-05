@@ -45,7 +45,16 @@ def _get_client():
         aws_access_key_id=access_key,
         aws_secret_access_key=secret_key,
         region_name="auto",
-        config=Config(signature_version="s3v4"),
+        # addressing_style: "path" is required for R2 - without it,
+        # boto3's default addressing style produces requests R2 rejects
+        # with "InvalidArgument: Authorization" (a 400, not an auth
+        # failure despite the misleading message - this is R2's own
+        # generic error for a malformed/mismatched request, confirmed by
+        # multiple independent reports on Cloudflare's own community
+        # forum, e.g. community.cloudflare.com/t/r2-storage-unable-to-
+        # upload-using-pre-signed-url-getting-invalid-argument-
+        # authorization/396502, all resolved the same way).
+        config=Config(signature_version="s3v4", s3={"addressing_style": "path"}),
     )
     return _client
 
