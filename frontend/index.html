@@ -813,14 +813,34 @@ import { STLLoader } from "three/addons/loaders/STLLoader.js";
 
     try{
       if(!SERVICE_API_KEY) await ensureServiceKey(base);
-      const res = await fetch(base + '/generate', {
+
+      let res = await fetch(base + '/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-API-Key': SERVICE_API_KEY },
         body: JSON.stringify({ description: description })
       });
+
+      // A cached key can go stale without the browser knowing - e.g.
+      // Railway's container filesystem is ephemeral, so a backend
+      // redeploy wipes the sqlite api_keys table and any key minted
+      // before that redeploy now 401s. Rather than surface a confusing
+      // "Generation failed" for what's really an expired-key problem,
+      // clear the stale cache, mint a fresh key, and retry once before
+      // giving up.
+      if(res.status === 401){
+        localStorage.removeItem('partsmith_service_key_' + base);
+        SERVICE_API_KEY = null;
+        await ensureServiceKey(base);
+        res = await fetch(base + '/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-API-Key': SERVICE_API_KEY },
+          body: JSON.stringify({ description: description })
+        });
+      }
+
       const data = await res.json();
-      if(!data.success){
-        throw new Error(data.error || 'Generation failed.');
+      if(!res.ok || !data.success){
+        throw new Error(data.error || data.detail || `Generation failed (HTTP ${res.status}).`);
       }
       statusEl.textContent = 'Done.';
       if(!scene) initViewer();
