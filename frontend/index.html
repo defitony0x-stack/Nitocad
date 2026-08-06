@@ -231,13 +231,12 @@
     margin-top:12px;padding:10px 14px;border-radius:8px;font-size:.8rem;
     background:#FFF3EC;border:1px dashed var(--orange);color:var(--orange-deep);
   }
-  .demo-downloads{display:flex;gap:12px;flex-wrap:wrap;margin-top:16px;}
-  .demo-downloads a{
-    display:inline-flex;align-items:center;gap:6px;
-    padding:10px 16px;border-radius:8px;background:var(--ink);color:#fff;
-    text-decoration:none;font-size:.85rem;font-weight:500;
+  .demo-downloads{
+    margin-top:16px;border-radius:12px;padding:18px 20px;
+    background:var(--fog);border:1px dashed rgba(0,0,0,.15);
+    display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;
   }
-  .demo-downloads a:hover{background:var(--orange-deep);}
+  .demo-downloads p{margin:0;font-size:.85rem;max-width:32ch;}
   @media (max-width:900px){
     .demo-result-grid{grid-template-columns:1fr;}
   }
@@ -800,11 +799,15 @@ import { STLLoader } from "three/addons/loaders/STLLoader.js";
       if(!pathOrUrl) return null;
       return /^https?:\/\//.test(pathOrUrl) ? pathOrUrl : base + pathOrUrl;
     }
-    const stepUrl = resolveUrl(data.step_url);
     const stlUrl = resolveUrl(data.stl_url);
+
+    // Full STEP/STL file access is an OKX-marketplace-only feature - the
+    // free demo shows the 3D preview and parsed parameters, with a nudge
+    // to buy the full job there instead of a download link. Same pattern
+    // as Stitchfren's demo-dxf-upsell.
     downloadsEl.innerHTML =
-      `<a href="${stepUrl}" target="_blank">Download STEP</a>` +
-      `<a href="${stlUrl}" target="_blank">Download STL</a>`;
+      '<p>Want the STEP/STL files for this part? Full file access ships with the full job on the OKX Agent Marketplace.</p>' +
+      '<a class="btn btn-primary" href="https://www.okx.ai/agents/YOUR-LISTING-ID" target="_blank" rel="noopener">Get the full package on OKX</a>';
 
     loadSTL(stlUrl);
   }
