@@ -57,7 +57,7 @@ function paymentIsConfigured() {
 // end (parse + generate + validate + STEP/STL export - see
 // cad_generator.py's generate_from_text, which always runs these
 // together in one synchronous call).
-export const PRICE = process.env.NL_TO_CAD_PRICE || "$0.25";
+export const PRICE = process.env.NL_TO_CAD_PRICE || "$0.5";
 
 // Same OKX Onchain OS x402 API contract Stitchfren's gateway uses
 // (web3.okx.com/onchainos/dev-docs/payments/api-http-onetime). Prehash
