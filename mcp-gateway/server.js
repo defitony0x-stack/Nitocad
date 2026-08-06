@@ -56,8 +56,10 @@ function paymentIsConfigured() {
 // Placeholder pricing for the one real skill this backend offers end to
 // end (parse + generate + validate + STEP/STL export - see
 // cad_generator.py's generate_from_text, which always runs these
-// together in one synchronous call).
-export const PRICE = process.env.NL_TO_CAD_PRICE || "$0.5";
+// together in one synchronous call). Priced in USDT atomic units (6
+// decimals) directly on the route below, not as a dollar-string - see
+// the note in buildPaymentMiddleware() for why.
+export const PRICE_USDT_ATOMIC = process.env.NL_TO_CAD_AMOUNT || "500000"; // $0.50
 
 // Same OKX Onchain OS x402 API contract Stitchfren's gateway uses
 // (web3.okx.com/onchainos/dev-docs/payments/api-http-onetime). Prehash
@@ -130,7 +132,19 @@ async function buildPaymentMiddleware() {
 
   const routes = {
     "POST /mcp/generate-cad": {
-      accepts: [{ scheme: "exact", network: NETWORK, payTo: process.env.PAY_TO_ADDRESS, price: PRICE }],
+      accepts: [{
+        scheme: "exact",
+        network: NETWORK,
+        payTo: process.env.PAY_TO_ADDRESS,
+        // eip155:196 (X Layer) has no entry in x402's default-asset table,
+        // so a dollar-string price ("$0.5") throws "No default asset
+        // configured for network eip155:196" at request time. Confirmed
+        // against a live call on 2026-08-07. Fixed by pricing in explicit
+        // USDT units instead of relying on that lookup.
+        amount: PRICE_USDT_ATOMIC, // 6 decimals → $0.50 USDT
+        asset: "0x1e4a5963abfd975d8c9021ce480b42188849d41d", // USDT on X Layer, confirmed via OKLink
+        extra: { name: "Tether USD", version: "1" },
+      }],
       description:
         "Convert a plain-English mechanical part description into a manufacturable .STEP CAD file (with .STL for preview), using CadQuery/OpenCASCADE. Returns download links plus the parsed parameters and any validation warnings/auto-corrections.",
       mimeType: "application/json",
