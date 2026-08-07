@@ -145,10 +145,26 @@ def build_paid_app(inner_app, resource_description: str):
     either, raises PaymentConfigError rather than silently building an app
     that would deliver the paid result for free.
     """
+    # Diagnostic only - prints once at startup so Railway's deploy log says
+    # in plain text which branch this call took, instead of that having to
+    # be inferred later from how a live request behaves. Safe to remove
+    # once the 402-vs-passthrough question is settled; doesn't change
+    # behavior.
+    print(
+        f"[a2mcp.x402] build_paid_app: facilitator_is_configured="
+        f"{facilitator_is_configured()} ALLOW_UNPAID_MCP={ALLOW_UNPAID_MCP} "
+        f"OKX_API_KEY_set={bool(OKX_API_KEY)} OKX_SECRET_KEY_set={bool(OKX_SECRET_KEY)} "
+        f"OKX_PASSPHRASE_set={bool(OKX_PASSPHRASE)} PAY_TO_ADDRESS_set={bool(PAY_TO_ADDRESS)}"
+    )
+
     if not facilitator_is_configured():
         if ALLOW_UNPAID_MCP:
             # Explicit opt-in only, for local dev with no OKX creds at
             # hand. Never set this on the deploy OKX's listing points at.
+            print(
+                "[a2mcp.x402] build_paid_app: returning UNWRAPPED inner_app "
+                "(ALLOW_UNPAID_MCP=true) - no payment gate on this path."
+            )
             return inner_app
         raise PaymentConfigError(
             "Payment processing is not configured on this deployment "
@@ -159,4 +175,5 @@ def build_paid_app(inner_app, resource_description: str):
 
     server = _get_resource_server()
     routes = _payment_routes(resource_description)
+    print(f"[a2mcp.x402] build_paid_app: returning PaymentMiddlewareASGI, routes={list(routes.keys())}")
     return PaymentMiddlewareASGI(inner_app, routes=routes, server=server)
