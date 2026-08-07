@@ -1,6 +1,7 @@
 """
 Enhanced web interface with 3D preview.
 """
+from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
@@ -12,8 +13,27 @@ from pathlib import Path
 import db
 from cad_generator import CADGenerator
 from security import get_current_key
+from a2mcp.server import mcp_app, mcp_app_gated
 
-app = FastAPI(title="Natural Language to CAD")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    db.init_db()
+    # fastmcp's Streamable HTTP transport needs its own session manager
+    # running for the lifetime of the app (this is what makes /mcp actually
+    # answer instead of 404) - the plain @app.on_event("startup") hook this
+    # replaced doesn't provide that; a lifespan context manager is required.
+    async with mcp_app.lifespan(app):
+        yield
+
+
+app = FastAPI(title="Natural Language to CAD", lifespan=lifespan)
+
+# Real MCP protocol server (initialize / tools/list / tools/call), x402
+# payment-gated per-call for the one priced tool. See a2mcp/server.py.
+# Supersedes mcp-gateway/ (the Node service) - see that file's deprecation
+# note.
+app.mount("/mcp", mcp_app_gated)
 
 # The static demo frontend deploys separately (Vercel/Netlify, no build
 # step - see README) and calls this API cross-origin, same split as
@@ -26,11 +46,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-@app.on_event("startup")
-def _startup():
-    db.init_db()
 
 
 generator = CADGenerator()
