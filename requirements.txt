@@ -1,5 +1,5 @@
 cadquery==2.3.1
-fastapi>=0.115.12
+fastapi==0.115.12
 uvicorn==0.24.0
 pydantic==2.5.0
 python-multipart==0.0.6
@@ -16,7 +16,7 @@ boto3>=1.34.0   # R2 (S3-compatible) storage - see storage.py, optional at runti
 # access in this environment) - check before relying on them, same caveat
 # mcp-gateway's @x402/* pins had.
 okxweb3-app-x402
-fastmcp>=2.0
+fastmcp==2.14.7
 
 # anthropic SDK removed: it was only used by llm_parser.py, which is
 # unused now that cad_generator.py calls DeepSeek's parser
