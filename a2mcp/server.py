@@ -289,7 +289,30 @@ class X402Gate:
             return await receive()
 
         target = self.paid_app if not _is_free(body, headers) else self.free_app
-        await target(scope, replay_receive, send)
+
+        # Diagnostic only - logs exactly what X402Gate hands to whichever
+        # app it picks, and what status code came back, so it's directly
+        # observable whether paid_app (PaymentMiddlewareASGI) is actually
+        # intercepting an unpaid request with its own 402, or silently
+        # passing it through to fastmcp underneath. Safe to remove once
+        # that's settled; doesn't change routing or response behavior.
+        target_name = "paid_app" if target is self.paid_app else "free_app"
+        print(
+            f"[a2mcp.server] X402Gate dispatch: method={scope['method']} "
+            f"path={scope.get('path')!r} raw_path={scope.get('raw_path')!r} "
+            f"target={target_name} has_payment_header="
+            f"{'payment-signature' in headers or 'x-payment' in headers}"
+        )
+
+        status_holder = {}
+
+        async def logging_send(message):
+            if message.get("type") == "http.response.start":
+                status_holder["status"] = message.get("status")
+            await send(message)
+
+        await target(scope, replay_receive, logging_send)
+        print(f"[a2mcp.server] X402Gate dispatch: target={target_name} responded status={status_holder.get('status')}")
 
 
 # AcceptFixer runs first on both paths so fastmcp never 406s on headers.
