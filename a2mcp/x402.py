@@ -110,13 +110,26 @@ def _get_resource_server() -> x402ResourceServer:
 
 def _payment_routes(resource_description: str) -> dict:
     """
-    Registers both "POST /mcp/" and "GET /mcp/": X402Gate forwards two
-    kinds of unpaid requests to paid_app - a priced tools/call (POST) and
-    a sessionless GET (the SSE-stream-open probe OKX's x402 checker sends,
+    Registers both "POST /mcp" and "GET /mcp": X402Gate forwards two kinds
+    of unpaid requests to paid_app - a priced tools/call (POST) and a
+    sessionless GET (the SSE-stream-open probe OKX's x402 checker sends,
     per X402Gate's own GET-handling comment) - and both need a matching
     entry here or PaymentMiddlewareASGI has nothing to enforce and passes
     them straight through, same failure mode as the POST-only path bug
     this function used to have.
+
+    NO trailing slash on these keys - confirmed against the installed
+    okxweb3-app-x402 (0.1.1) source. x402HTTPResourceServer._normalize_path
+    does path.rstrip("/") on every incoming request path before matching,
+    but _parse_route_pattern builds the match regex straight from the route
+    key with no equivalent stripping. A key of "POST /mcp/" compiles to
+    ^\\/mcp\\/$, which the normalized request path "/mcp" (slash already
+    stripped) can never match - so the route silently never matches and
+    PaymentMiddlewareASGI passes every request straight through unguarded
+    instead of returning 402. "POST /mcp" (no trailing slash) compiles to
+    ^\\/mcp$, which does match. Verified via inspect.getsource() on
+    x402.http.middleware.fastapi.x402HTTPResourceServer._normalize_path /
+    _parse_route_pattern - not re-derived from memory.
     """
     option = PaymentOption(
         scheme="exact",
@@ -126,12 +139,12 @@ def _payment_routes(resource_description: str) -> dict:
         max_timeout_seconds=60,
     )
     return {
-        "POST /mcp/": RouteConfig(
+        "POST /mcp": RouteConfig(
             accepts=[option],
             description=resource_description,
             mime_type="application/json",
         ),
-        "GET /mcp/": RouteConfig(
+        "GET /mcp": RouteConfig(
             accepts=[option],
             description=resource_description,
             mime_type="application/json",
