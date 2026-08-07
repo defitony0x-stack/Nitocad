@@ -149,6 +149,53 @@ FREE_METHODS = {"initialize", "notifications/initialized", "ping"}
 FREE_TOOL_NAMES: set[str] = set()
 
 
+def _validate_tool_call(payload: Dict[str, Any]) -> Optional[str]:
+    """
+    Structural + required-argument validation for a tools/call payload,
+    run in X402Gate BEFORE payment routing. OKX's A2MCP review rejected
+    NitoCAD for validating parameters only after the buyer was already
+    charged (see the 402-then-400-with-payment-header pattern in the
+    Railway logs: PaymentMiddlewareASGI settled payment, then fastmcp/
+    generate_cad_part discovered the request was malformed). Anything
+    this function would reject must never reach paid_app - X402Gate
+    checks this first and returns its own 400 with no charge attempted.
+
+    Only checks what's needed to guarantee the paid tool call can
+    actually run: does the envelope look like JSON-RPC, does the tool
+    name exist, and is the one required argument (description) present
+    and non-empty. Deliberately does NOT duplicate CADGenerator's
+    geometry-level validation (hole/fillet auto-correction etc.) - that
+    class of "validation" legitimately can't happen before parsing the
+    description, and OKX's complaint was about basic request validity,
+    not geometry correctness.
+
+    Returns an error message string if invalid, None if the call should
+    proceed to payment routing.
+    """
+    if payload.get("jsonrpc") != "2.0":
+        return "Invalid Request: missing or wrong 'jsonrpc' version, expected \"2.0\"."
+    if "id" not in payload:
+        return "Invalid Request: missing 'id'."
+
+    params = payload.get("params")
+    if not isinstance(params, dict):
+        return "Invalid params: 'params' must be an object."
+
+    name = params.get("name")
+    if name != "generate_cad_part":
+        return f"Unknown tool: {name!r}. Only 'generate_cad_part' is available."
+
+    arguments = params.get("arguments")
+    if not isinstance(arguments, dict):
+        return "Invalid params: 'arguments' must be an object."
+
+    description = arguments.get("description")
+    if not isinstance(description, str) or not description.strip():
+        return "Invalid params: 'arguments.description' is required and must be a non-empty string."
+
+    return None
+
+
 def _is_free(body: bytes, headers: Dict[str, str]) -> bool:
     """
     Default-DENY: only explicit session-bootstrap plumbing (FREE_METHODS)
@@ -263,6 +310,7 @@ class X402Gate:
         # Default the params for a bare initialize so the handshake
         # completes and the endpoint reads as valid. A real MCP client
         # sends full params and is unaffected.
+        parsed: Any = None
         try:
             parsed = json.loads(body)
             if (
@@ -277,7 +325,29 @@ class X402Gate:
                 }
                 body = json.dumps(parsed).encode()
         except Exception:
-            pass
+            parsed = None
+
+        # Reject a malformed/incomplete tools/call BEFORE any payment
+        # routing decision - see _validate_tool_call's docstring. This must
+        # run ahead of the free/paid split: an invalid call is invalid
+        # whether or not it would have been priced, and must never reach
+        # paid_app regardless.
+        if isinstance(parsed, dict) and parsed.get("method") == "tools/call":
+            validation_error = _validate_tool_call(parsed)
+            if validation_error is not None:
+                print(f"[a2mcp.server] X402Gate: rejecting pre-payment, no charge attempted: {validation_error}")
+                error_body = json.dumps({
+                    "jsonrpc": "2.0",
+                    "id": parsed.get("id"),
+                    "error": {"code": -32602, "message": validation_error},
+                }).encode()
+                await send({
+                    "type": "http.response.start",
+                    "status": 400,
+                    "headers": [(b"content-type", b"application/json")],
+                })
+                await send({"type": "http.response.body", "body": error_body})
+                return
 
         replayed = False
 
