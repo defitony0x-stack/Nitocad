@@ -1,4 +1,14 @@
 /**
+ * DEPRECATED — superseded by a2mcp/ (Python, mounted at /mcp on the
+ * FastAPI backend directly). This Node gateway is the same
+ * "REST route wrapped by the generic community @x402/evm package" shape
+ * that got Stitchfren's identical gateway rejected by OKX's A2MCP review
+ * ("service isn't integrated with the official OKX Payment SDK") — see
+ * a2mcp/x402.py's module docstring for the full story. Keeping this file
+ * in place for reference / rollback only. Do not point a new OKX listing
+ * at this service; decommission the Railway deployment once a2mcp/ is
+ * verified live.
+ *
  * nl-to-cad MCP Gateway
  * ---------------------
  * A2MCP (pay-per-call) front door for the OKX AI Marketplace.
@@ -138,12 +148,24 @@ async function buildPaymentMiddleware() {
         payTo: process.env.PAY_TO_ADDRESS,
         // eip155:196 (X Layer) has no entry in x402's default-asset table,
         // so a dollar-string price ("$0.5") throws "No default asset
-        // configured for network eip155:196" at request time. Confirmed
-        // against a live call on 2026-08-07. Fixed by pricing in explicit
-        // USDT units instead of relying on that lookup.
-        amount: PRICE_USDT_ATOMIC, // 6 decimals → $0.50 USDT
-        asset: "0x1e4a5963abfd975d8c9021ce480b42188849d41d", // USDT on X Layer, confirmed via OKLink
-        extra: { name: "Tether USD", version: "1" },
+        // configured for network eip155:196" (confirmed live, 2026-08-07).
+        // Fix per docs.x402.org/core-concepts/network-and-token-support:
+        // `price` must be a TokenAmount object — amountInAtomicUnits +
+        // asset address + eip712{name,version} — not a dollar-string, and
+        // not sibling amount/asset keys (that was the first, wrong, fix
+        // attempt here: parsePrice only ever reads `price`, so anything
+        // outside it is silently ignored and price comes through
+        // undefined). TODO: confirm `version` against this token's own
+        // version() read function on X Layer's block explorer before
+        // relying on this in production — "1" is Tether's common default
+        // but hasn't been verified on-chain for this specific deployment,
+        // and a wrong EIP-712 version fails signature verification rather
+        // than crashing loudly like the two bugs above did.
+        price: {
+          amountInAtomicUnits: PRICE_USDT_ATOMIC, // 6 decimals → $0.50 USDT
+          asset: "0x1e4a5963abfd975d8c9021ce480b42188849d41d", // USDT on X Layer, confirmed via OKLink
+          eip712: { name: "Tether USD", version: "1" },
+        },
       }],
       description:
         "Convert a plain-English mechanical part description into a manufacturable .STEP CAD file (with .STL for preview), using CadQuery/OpenCASCADE. Returns download links plus the parsed parameters and any validation warnings/auto-corrections.",
