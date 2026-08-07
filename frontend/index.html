@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Partsmith — Natural Language to Parametric CAD</title>
+<title>EasyCAD — Natural Language to Parametric CAD</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,500;0,9..144,600;1,9..144,500&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -372,7 +372,7 @@
         <span class="eyebrow">Natural language to parametric CAD</span>
         <h1>Describe the part.<br>Get a real, sized <em>STEP file</em> out.</h1>
         <p class="lead">
-          Partsmith turns a plain description into an exact, manufacturable
+          EasyCAD turns a plain description into an exact, manufacturable
           CAD part, brackets, shafts, gears, enclosures, and more, computed
           by CadQuery's OpenCASCADE kernel, not approximated. Every part
           ships with the parameters used, geometric validation, and a
@@ -387,7 +387,7 @@
       <!-- Signature: the actual product output, rendered as it really comes out -->
       <div class="rig">
         <div class="rig-top">
-          <span class="rig-brand mono">partsmith · live output</span>
+          <span class="rig-brand mono">easycad · live output</span>
           <span class="rig-dots"><span></span><span></span><span></span></span>
         </div>
         <div class="panes">
@@ -505,7 +505,7 @@
       <div class="demo-shell">
         <div class="demo-bar">
           <span></span><span></span><span></span>
-          <span class="demo-url">partsmith.dev/demo</span>
+          <span class="demo-url">easycad.dev/demo</span>
         </div>
         <div class="demo-live">
           <div class="demo-cfg" id="demoCfg" style="display:none;">
@@ -557,7 +557,7 @@
       <div class="okx-top">
         <div class="section-head" style="margin-bottom:0;">
           <span class="eyebrow">On the OKX Agent Marketplace</span>
-          <h2>What's live under the Partsmith skill.</h2>
+          <h2>What's live under the EasyCAD skill.</h2>
         </div>
         <span class="okx-badge">agent status: <b>&nbsp;preview</b></span>
       </div>
@@ -675,8 +675,8 @@ import { STLLoader } from "three/addons/loaders/STLLoader.js";
     demoCfg.style.display = 'flex';
   }
 
-  function getApiBase(){ return localStorage.getItem('partsmith_api_base') || DEFAULT_API_BASE; }
-  function setApiBase(v){ localStorage.setItem('partsmith_api_base', v.replace(/\/$/, '')); }
+  function getApiBase(){ return localStorage.getItem('easycad_api_base') || DEFAULT_API_BASE; }
+  function setApiBase(v){ localStorage.setItem('easycad_api_base', v.replace(/\/$/, '')); }
 
   // /generate requires an X-API-Key header (see security.py) - this
   // wasn't in the original draft of this page, which would have gotten
@@ -685,12 +685,12 @@ import { STLLoader } from "three/addons/loaders/STLLoader.js";
   // POST /api/keys/generate, cache it in localStorage.
   let SERVICE_API_KEY = null;
   async function ensureServiceKey(base){
-    const cached = localStorage.getItem('partsmith_service_key_' + base);
+    const cached = localStorage.getItem('easycad_service_key_' + base);
     if(cached){ SERVICE_API_KEY = cached; return; }
     const resp = await fetch(base + '/api/keys/generate', { method: 'POST' });
     const data = await resp.json();
     SERVICE_API_KEY = data.api_key;
-    localStorage.setItem('partsmith_service_key_' + base, SERVICE_API_KEY);
+    localStorage.setItem('easycad_service_key_' + base, SERVICE_API_KEY);
   }
 
   function refreshStatus(){
@@ -840,7 +840,7 @@ import { STLLoader } from "three/addons/loaders/STLLoader.js";
       // clear the stale cache, mint a fresh key, and retry once before
       // giving up.
       if(res.status === 401){
-        localStorage.removeItem('partsmith_service_key_' + base);
+        localStorage.removeItem('easycad_service_key_' + base);
         SERVICE_API_KEY = null;
         await ensureServiceKey(base);
         res = await fetch(base + '/generate', {
