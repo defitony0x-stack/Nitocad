@@ -110,35 +110,42 @@ def _get_resource_server() -> x402ResourceServer:
 
 def _payment_routes(resource_description: str) -> dict:
     """
-    One route, matching RouteConfig/PaymentOption's shape. Keyed "POST /"
-    rather than "POST /mcp": the app this gets attached to (build_paid_app's
-    return value) is reached through server.py's X402Gate dispatcher, which
-    is itself mounted at /mcp by web_app.py's app.mount("/mcp", mcp_app_gated)
-    - by the time a request reaches this inner app, the /mcp prefix has
-    already been stripped from the scope path by that outer mount.
+    Registers both "POST /mcp/" and "GET /mcp/": X402Gate forwards two
+    kinds of unpaid requests to paid_app - a priced tools/call (POST) and
+    a sessionless GET (the SSE-stream-open probe OKX's x402 checker sends,
+    per X402Gate's own GET-handling comment) - and both need a matching
+    entry here or PaymentMiddlewareASGI has nothing to enforce and passes
+    them straight through, same failure mode as the POST-only path bug
+    this function used to have.
     """
+    option = PaymentOption(
+        scheme="exact",
+        price=PRICE_USD,
+        network=NETWORK,
+        pay_to=PAY_TO_ADDRESS,
+        max_timeout_seconds=60,
+    )
     return {
-        "POST /": RouteConfig(
-            accepts=[
-                PaymentOption(
-                    scheme="exact",
-                    price=PRICE_USD,
-                    network=NETWORK,
-                    pay_to=PAY_TO_ADDRESS,
-                    max_timeout_seconds=60,
-                ),
-            ],
+        "POST /mcp/": RouteConfig(
+            accepts=[option],
+            description=resource_description,
+            mime_type="application/json",
+        ),
+        "GET /mcp/": RouteConfig(
+            accepts=[option],
             description=resource_description,
             mime_type="application/json",
         ),
     }
 
 
+
 def build_paid_app(inner_app, resource_description: str):
     """
-    Wraps `inner_app` in the real PaymentMiddlewareASGI: routes={"POST /":
-    RouteConfig(accepts=[PaymentOption(...)])}, server=x402ResourceServer
-    with ExactEvmScheme registered for eip155:196.
+    Wraps `inner_app` in the real PaymentMiddlewareASGI: routes from
+    _payment_routes() ("POST /mcp/" and "GET /mcp/", see that function's
+    docstring for why the path is the full unstripped one, not "/"),
+    server=x402ResourceServer with ExactEvmScheme registered for eip155:196.
 
     Fails closed: if facilitator creds or PAY_TO_ADDRESS aren't set and the
     explicit local-dev opt-out (NL_TO_CAD_ALLOW_UNPAID_MCP=true) isn't
