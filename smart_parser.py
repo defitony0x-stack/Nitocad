@@ -125,6 +125,8 @@ def extract_all_dimensions(text: str) -> list[ExtractedDimension]:
         (r'(\d+(?:\.\d+)?)\s*(?:mm\s*)?(?:tall|height)', 'height'),
         (r'(\d+(?:\.\d+)?)\s*(?:mm\s*)?(?:deep|depth)', 'depth'),
         (r'(\d+(?:\.\d+)?)\s*(?:mm\s*)?(?:long|length)', 'length'),
+        (r'(\d+(?:\.\d+)?)\s*(?:mm\s*)?(?:hole\s*)?(?:diameter|dia)', 'diameter'),
+        (r'(\d+(?:\.\d+)?)\s*(?:mm\s*)?radius', 'radius'),
     ]
     
     for pattern, context in context_patterns:
@@ -156,17 +158,24 @@ def extract_hole_patterns(text: str) -> list[ExtractedPattern]:
     hole_diameter = None
     hole_spacing = None
     
-    # Extract hole diameter
+    # Extract hole diameter. Two orderings show up in practice:
+    # "hole diameter of 6mm" / "holes with 6mm dia" (keyword before number)
+    # and "6mm hole diameter" (number before keyword) - the original regex
+    # only caught the first, so "6mm hole diameter" fell through silently.
     dia_match = re.search(r'(?:hole|holes)\s*(?:of|with|dia(?:meter)?)\s*(\d+(?:\.\d+)?)', text_lower)
     if dia_match:
         hole_diameter = float(dia_match.group(1))
     else:
-        # Check for M-size
-        m_match = re.search(r'\b(m\d+)\b', text_lower)
-        if m_match:
-            m_size = m_match.group(1).upper()
-            if m_size in STANDARD_SIZES:
-                hole_diameter = STANDARD_SIZES[m_size]['clearance']
+        dia_match_rev = re.search(r'(\d+(?:\.\d+)?)\s*(?:mm\s*)?holes?\s*dia(?:meter)?', text_lower)
+        if dia_match_rev:
+            hole_diameter = float(dia_match_rev.group(1))
+        else:
+            # Check for M-size
+            m_match = re.search(r'\b(m\d+)\b', text_lower)
+            if m_match:
+                m_size = m_match.group(1).upper()
+                if m_size in STANDARD_SIZES:
+                    hole_diameter = STANDARD_SIZES[m_size]['clearance']
     
     # Extract spacing
     spacing_match = re.search(r'(?:spacing|pitch|center)\s*(?:of|is|=|:)?\s*(\d+(?:\.\d+)?)', text_lower)
@@ -326,10 +335,20 @@ def infer_part_type(text: str, dimensions: list[ExtractedDimension], operations:
         else:
             return 'flat_plate'
 
-def infer_missing_dimensions(part_type: str, dimensions: list[ExtractedDimension], patterns: list[ExtractedPattern], description: str = "") -> dict[str, Any]:
+def infer_missing_dimensions(part_type: str, dimensions: list[ExtractedDimension], patterns: list[ExtractedPattern], description: str = "", operations: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     """Infer missing dimensions based on part type and context."""
     params = {}
     text_lower = description.lower()
+    operations = operations or []
+    
+    # A fillet phrased naturally ("8mm fillets on all edges") is caught by
+    # extract_operations' fillet regex, not by the 'radius' context pattern
+    # below (which needs the literal word "radius"). Prefer that parsed
+    # value for the template's own fillet_radius_mm/corner_fillet_mm so the
+    # part isn't built with a silent 2.0/3.0mm default while the real
+    # request sits unused in `operations` and later fails as a redundant
+    # second fillet pass on already-rounded edges.
+    fillet_op_radius = next((op['radius'] for op in operations if op.get('type') == 'fillet'), None)
     
     # Map extracted dimensions to parameters
     dim_map = {}
@@ -353,16 +372,16 @@ def infer_missing_dimensions(part_type: str, dimensions: list[ExtractedDimension
         params['motor_size_mm'] = motor_size
         params['thickness_mm'] = dim_map.get('thickness', 3.0)
         params['hole_diameter_mm'] = dim_map.get('diameter', 3.2)
-        params['fillet_radius_mm'] = dim_map.get('radius', 2.0)
+        params['fillet_radius_mm'] = fillet_op_radius if fillet_op_radius is not None else dim_map.get('radius', 2.0)
         
     elif part_type == 'l_bracket':
         params['width_mm'] = dim_map.get('width', 50.0)
         params['height_mm'] = dim_map.get('height', 60.0)
         params['depth_mm'] = dim_map.get('depth', 40.0)
         params['thickness_mm'] = dim_map.get('thickness', 3.0)
-        params['hole_count'] = 2
+        params['hole_count'] = patterns[0].count if patterns else 2
         params['hole_diameter_mm'] = dim_map.get('diameter', 3.2)
-        params['fillet_radius_mm'] = dim_map.get('radius', 2.0)
+        params['fillet_radius_mm'] = fillet_op_radius if fillet_op_radius is not None else dim_map.get('radius', 2.0)
         
     elif part_type == 'flat_plate':
         params['length_mm'] = dim_map.get('length', 100.0)
@@ -384,7 +403,7 @@ def infer_missing_dimensions(part_type: str, dimensions: list[ExtractedDimension
             params['hole_count_x'] = 4
             params['hole_count_y'] = 3
             params['hole_diameter_mm'] = dim_map.get('diameter', 3.2)
-        params['corner_fillet_mm'] = dim_map.get('radius', 3.0)
+        params['corner_fillet_mm'] = fillet_op_radius if fillet_op_radius is not None else dim_map.get('radius', 3.0)
         
     elif part_type == 'shaft':
         params['diameter_mm'] = dim_map.get('diameter', 10.0)
@@ -541,7 +560,20 @@ def parse_description(description: str, use_claude: bool = False, api_key: str =
     part_type = infer_part_type(description, dimensions, operations)
     
     # Infer missing dimensions
-    parameters = infer_missing_dimensions(part_type, dimensions, patterns, description)
+    parameters = infer_missing_dimensions(part_type, dimensions, patterns, description, operations)
+    
+    # Templates that expose their own fillet_radius_mm/corner_fillet_mm
+    # already apply the parsed fillet value directly (see infer_missing_dimensions
+    # above). Leaving the matching entry in `operations` would make
+    # cad_generator._apply_operations attempt a second, redundant fillet
+    # pass on edges that are already rounded, which fails and gets
+    # silently dropped. Drop it here once it's been consumed by the template.
+    consumed_fillet_radius = parameters.get('fillet_radius_mm', parameters.get('corner_fillet_mm'))
+    if consumed_fillet_radius is not None:
+        operations = [
+            op for op in operations
+            if not (op.get('type') == 'fillet' and op.get('radius') == consumed_fillet_radius)
+        ]
     
     # Add operations to parameters
     if operations:
