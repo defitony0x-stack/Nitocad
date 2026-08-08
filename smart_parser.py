@@ -501,9 +501,10 @@ def infer_missing_dimensions(part_type: str, dimensions: list[ExtractedDimension
     elif part_type == 'freeform':
         params['profile_points'] = []
         params['path_points'] = []
-        params['sweep'] = False
-        params['loft'] = False
-        params['revolve'] = False
+        op_types = {op.get('type') for op in operations}
+        params['sweep'] = 'sweep' in op_types
+        params['loft'] = 'loft' in op_types
+        params['revolve'] = 'revolve' in op_types
         
     return params
 
