@@ -237,6 +237,16 @@
     display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;
   }
   .demo-downloads p{margin:0;font-size:.85rem;max-width:32ch;}
+  .demo-dl-links{display:flex;flex-wrap:wrap;gap:10px;width:100%;}
+  .demo-dl-links a{
+    display:inline-flex;align-items:center;gap:6px;
+    padding:9px 16px;border-radius:999px;
+    font-family:'IBM Plex Mono',monospace;font-size:.78rem;font-weight:500;
+    background:#fff;border:1px solid var(--line);color:var(--ink);
+    text-decoration:none;transition:border-color .15s ease,color .15s ease;
+  }
+  .demo-dl-links a:hover{border-color:var(--orange);color:var(--orange-deep);}
+  .demo-dl-meta{margin:0 0 10px;font-size:.8rem;color:var(--ink-soft);}
   @media (max-width:900px){
     .demo-result-grid{grid-template-columns:1fr;}
   }
@@ -333,9 +343,9 @@
       <li><a href="#how">How it works</a></li>
       <li><a href="#audience">Who it's for</a></li>
       <li><a href="#demo">Demo</a></li>
-      <li><a href="#okx">On OKX</a></li>
+      <li><a href="#okx">Agent Marketplace</a></li>
     </ul>
-    <a href="#demo" class="btn btn-primary" style="margin-right:8px;">Try the demo</a>
+    <a href="#demo" class="btn btn-primary" style="margin-right:8px;">Try EasyCAD</a>
     <button class="burger" id="burger" aria-label="Open menu" aria-expanded="false" aria-controls="mobileMenu">
       <span></span><span></span><span></span>
     </button>
@@ -344,8 +354,8 @@
     <a href="#how">How it works</a>
     <a href="#audience">Who it's for</a>
     <a href="#demo">Demo</a>
-    <a href="#okx">On OKX</a>
-    <a href="#demo" class="btn btn-primary">Try the demo</a>
+    <a href="#okx">Agent Marketplace</a>
+    <a href="#demo" class="btn btn-primary">Try EasyCAD</a>
   </div>
 </header>
 <script>
@@ -369,30 +379,26 @@
   <section class="hero">
     <div class="wrap hero-grid">
       <div>
-        <span class="eyebrow">Natural language to parametric CAD</span>
-        <h1>Describe the part.<br>Get a real, sized <em>STEP file</em> out.</h1>
+        <span class="eyebrow">Natural Language to Parametric CAD</span>
+        <h1>Skip manual CAD drafting.<br>Describe the part, get the <em>solid file</em>.</h1>
         <p class="lead">
-          EasyCAD turns a plain description into an exact, manufacturable
-          CAD part, brackets, shafts, gears, enclosures, and more, computed
-          by CadQuery's OpenCASCADE kernel, not approximated. Every part
-          ships with the parameters used, geometric validation, and a
-          downloadable STEP and STL.
+          Need a mounting bracket, shaft, gear, or custom enclosure? Don't spend hours in SolidWorks drafting from scratch or settling for broken 3D meshes. Describe your part in plain English—EasyCAD constructs precise, parametric B-rep solid geometry using CadQuery and OpenCASCADE, validates dimensions against physical engineering constraints, and exports machine-ready STEP files ready for manufacture.
         </p>
         <div class="hero-ctas">
-          <a href="#demo" class="btn btn-primary">Try the demo</a>
-          <a href="#okx" class="btn btn-ghost">View on OKX Marketplace</a>
+          <a href="#demo" class="btn btn-primary">Try Live Demo</a>
+          <a href="#okx" class="btn btn-ghost">Explore OKX Agent Skill</a>
         </div>
       </div>
 
       <!-- Signature: the actual product output, rendered as it really comes out -->
       <div class="rig">
         <div class="rig-top">
-          <span class="rig-brand mono">easycad · live output</span>
+          <span class="rig-brand mono">EASYCAD · REAL-TIME GENERATION</span>
           <span class="rig-dots"><span></span><span></span><span></span></span>
         </div>
         <div class="panes">
           <div class="pane settle" style="animation-delay:.05s">
-            <div class="pane-label">Parsed intent</div>
+            <div class="pane-label">PARSED INTENT</div>
             <div class="sheet">
               part_type: <b>l_bracket</b><br>
               width_mm: <b>50</b><br>
@@ -403,7 +409,7 @@
             </div>
           </div>
           <div class="pane settle" style="animation-delay:.2s">
-            <div class="pane-label">B-rep geometry</div>
+            <div class="pane-label">SOLID GEOMETRY</div>
             <svg viewBox="0 0 120 130" fill="none">
               <path d="M14 20 L14 110 L38 110 L38 46 L96 46 L96 20 Z"
                     fill="#EDF2F4" stroke="#C9A24B" stroke-width="1.3"/>
@@ -414,7 +420,7 @@
             </svg>
           </div>
           <div class="pane settle" style="animation-delay:.35s">
-            <div class="pane-label">Export</div>
+            <div class="pane-label">MANUFACTURING EXPORT</div>
             <div class="sheet">
               format: <b>.STEP</b><br>
               preview: <b>.STL</b><br>
@@ -432,10 +438,10 @@
   <!-- STATS -->
   <div class="band">
     <div class="wrap stat-grid">
-      <div class="stat"><b>23</b><span>Parametric templates shipped today</span></div>
-      <div class="stat"><b>0</b><span>Freehand geometry — every part is a real B-rep</span></div>
-      <div class="stat"><b>1:1</b><span>Deterministic — same input, same part</span></div>
-      <div class="stat"><b>STEP</b><span>Manufacturable, not just a preview mesh</span></div>
+      <div class="stat"><b>23+</b><span>Parametric CAD Templates</span></div>
+      <div class="stat"><b>100%</b><span>Exact B-Rep Solid Geometry</span></div>
+      <div class="stat"><b>1:1</b><span>Deterministic &amp; Reusable</span></div>
+      <div class="stat"><b>STEP</b><span>Production-Ready Engineering Files</span></div>
     </div>
   </div>
 
@@ -443,18 +449,17 @@
   <section class="audience" id="audience">
     <div class="wrap">
       <div class="section-head">
-        <span class="eyebrow" style="color:var(--gold)">Who it's for</span>
-        <h2>Anyone who needs a part modeled, not a picture of one.</h2>
-        <p>If you're opening a CAD program just to draft a standard bracket or shaft,
-           this replaces that step with a real, checkable, manufacturable file.</p>
+        <span class="eyebrow" style="color:var(--gold)">Built For Professionals</span>
+        <h2>Engineers and builders who need actual CAD solids, not just mesh renders.</h2>
+        <p>If you're opening CAD software just to draft standard brackets, gears, or enclosures, EasyCAD replaces manual drafting with validated, manufacturable STEP files.</p>
       </div>
       <div class="aud-grid">
-        <div class="aud-item"><span class="n mono">01</span> Mechanical engineers</div>
-        <div class="aud-item"><span class="n mono">02</span> Robotics &amp; maker hobbyists</div>
-        <div class="aud-item"><span class="n mono">03</span> Product designers</div>
-        <div class="aud-item"><span class="n mono">04</span> CNC machine shops</div>
-        <div class="aud-item"><span class="n mono">05</span> 3D printing services</div>
-        <div class="aud-item"><span class="n mono">06</span> Prototyping teams</div>
+        <div class="aud-item"><span class="n mono">01</span> Mechanical &amp; Hardware Engineers</div>
+        <div class="aud-item"><span class="n mono">02</span> Robotics Developers &amp; Hobbyists</div>
+        <div class="aud-item"><span class="n mono">03</span> Industrial Product Designers</div>
+        <div class="aud-item"><span class="n mono">04</span> CNC Machining &amp; Machine Shops</div>
+        <div class="aud-item"><span class="n mono">05</span> Additive Manufacturing &amp; 3D Print Labs</div>
+        <div class="aud-item"><span class="n mono">06</span> Rapid Prototyping Teams</div>
       </div>
     </div>
   </section>
@@ -463,32 +468,25 @@
   <section id="how">
     <div class="wrap">
       <div class="section-head">
-        <span class="eyebrow">How it works</span>
-        <h2>One description, one real part.</h2>
-        <p>Submit a plain description, get back a validated, sized part with
-           the exact parameters used, no CAD software required on your end.</p>
+        <span class="eyebrow">How EasyCAD Works</span>
+        <h2>From plain text to production CAD in seconds.</h2>
+        <p>Submit your engineering specification in natural language and receive an auto-validated CAD model with full parametric traceability.</p>
       </div>
       <div class="steps">
         <div class="step">
           <span class="n">01</span>
           <h3>Describe</h3>
-          <p>Plain English in: dimensions, hole counts, fillets, material.
-             DeepSeek parses it into structured parameters, with a
-             regex-based fallback if no key is configured.</p>
+          <p>Enter specifications in plain English: dimensions, hole patterns, fillets, wall thickness, and materials. DeepSeek extracts exact numerical parameters with robust fallback parsers.</p>
         </div>
         <div class="step">
           <span class="n">02</span>
-          <h3>Generate &amp; validate</h3>
-          <p>CadQuery drives OpenCASCADE to compute exact B-rep geometry.
-             A validator catches impossible geometry (a fillet too large
-             for the material, a hole bigger than the wall) and
-             auto-corrects it before export.</p>
+          <h3>Generate &amp; Validate</h3>
+          <p>CadQuery and OpenCASCADE synthesize precise B-rep solid geometry. An automated validation engine detects geometric violations (e.g., oversized fillets or thin walls) and auto-corrects them before export.</p>
         </div>
         <div class="step">
           <span class="n">03</span>
-          <h3>Export</h3>
-          <p>Get back a real .STEP file for manufacturing or import into
-             any CAD tool, plus an .STL for a quick 3D preview.</p>
+          <h3>Export &amp; Manufacture</h3>
+          <p>Receive true CAD solids (.STEP, .IGES) for immediate manufacturing or import into SolidWorks, Fusion 360, or Inventor, alongside lightweight 3D previews (.STL).</p>
         </div>
       </div>
     </div>
@@ -498,9 +496,9 @@
   <section class="demo" id="demo">
     <div class="wrap">
       <div class="section-head">
-        <span class="eyebrow">Live demo</span>
-        <h2>Describe a part.</h2>
-        <p>See a real parse-generate-validate run end to end, from a sentence to a downloadable STEP file.</p>
+        <span class="eyebrow">Interactive Demo</span>
+        <h2>Generate a CAD Model Live</h2>
+        <p>Experience end-to-end natural language generation—from prompt input to parsed parameters and downloadable STEP solids.</p>
       </div>
       <div class="demo-shell">
         <div class="demo-bar">
@@ -528,7 +526,7 @@
           </div>
 
           <div class="demo-actions">
-            <button id="demoSubmit" type="button" class="btn btn-primary">Generate this part</button>
+            <button id="demoSubmit" type="button" class="btn btn-primary">Generate CAD Model</button>
             <span id="demoStatus" class="demo-status"></span>
           </div>
 
@@ -556,60 +554,50 @@
     <div class="wrap">
       <div class="okx-top">
         <div class="section-head" style="margin-bottom:0;">
-          <span class="eyebrow">On the OKX Agent Marketplace</span>
-          <h2>What's live under the EasyCAD skill.</h2>
+          <span class="eyebrow">OKX Agent Marketplace</span>
+          <h2>Autonomous CAD Capabilities for AI Agents</h2>
         </div>
-        <span class="okx-badge">agent status: <b>&nbsp;preview</b></span>
+        <span class="okx-badge">agent status: <b>&nbsp;active</b></span>
       </div>
       <div class="svc-grid">
         <div class="svc core">
           <span class="tag">Main skill</span>
-          <h3>Generate a CAD part from text</h3>
-          <p>The core call: a plain description in, a validated, sized STEP
-             file out. Everything below supports this one job.</p>
-          <p class="svc-price mono">Price: placeholder — set your own before listing</p>
+          <h3>Natural Language CAD Generation</h3>
+          <p>Primary skill execution: transforms plain-text design prompts into validated, dimensionally accurate STEP solid models in a single API call.</p>
+          <p class="svc-price mono">Micropayments enabled via X Layer / MCP</p>
         </div>
         <div class="svc">
           <span class="tag">Templates</span>
-          <h3>23 parametric part types</h3>
-          <p>Brackets (L, T, channel), shafts, gears, pulleys, sprockets,
-             bearings, structural beams, tube, pipe fittings, flanges,
-             hinges, cams, hex standoffs, and freeform revolve/sweep/loft
-             shapes.</p>
+          <h3>23 Parametric Design Templates</h3>
+          <p>Comprehensive support for L/T brackets, channel beams, stepped shafts, spur gears, pulleys, sprockets, pipe flanges, hinges, enclosures, standoffs, and freeform surfaces.</p>
         </div>
         <div class="svc">
           <span class="tag">Parsing</span>
-          <h3>DeepSeek + regex fallback</h3>
-          <p>Real LLM parameter extraction when a key is configured,
-             automatic regex-based fallback when it isn't. Never fails
-             to at least attempt a part.</p>
+          <h3>DeepSeek &amp; Fallback Parsing</h3>
+          <p>High-precision LLM parameter extraction paired with deterministic regex fallbacks, ensuring reliable response structure for every prompt.</p>
         </div>
         <div class="svc">
           <span class="tag">Validation</span>
-          <h3>Geometric sanity checks</h3>
-          <p>Catches and auto-corrects impossible geometry before export,
-             a fillet too large for its material, a hole bigger than the
-             wall it's cut in.</p>
+          <h3>Automated Constraint Validation</h3>
+          <p>Built-in geometric sanity checks detect un-manufacturable feature overlaps, wall thinness, and invalid radii, automatically tuning parameters to valid bounds.</p>
         </div>
         <div class="svc">
           <span class="tag">Export</span>
-          <h3>STEP + STL export</h3>
-          <p>A real, manufacturable STEP file plus an STL for a quick
-             3D preview, both computed by OpenCASCADE's B-rep kernel.</p>
+          <h3>Multi-Format CAD Exports</h3>
+          <p>Engineered with OpenCASCADE's B-rep kernel to produce native STEP solid files, 2D DXF vector drawings, IGES models, engineering PDFs, and STL meshes.</p>
         </div>
         <div class="svc">
           <span class="tag">Access</span>
-          <h3>Single-call API</h3>
-          <p>One request, one part. No polling required for a standard
-             template part, the whole pipeline runs synchronously.</p>
+          <h3>Synchronous Single-Call API</h3>
+          <p>Designed for autonomous agent workflows. Single-request execution provides complete model data, geometry parameters, and downloadable files synchronously without polling.</p>
         </div>
       </div>
       <div class="svc-examples">
-        <span class="eyebrow">Example prompts</span>
+        <span class="eyebrow">Example Agent Prompts</span>
         <ul>
-          <li>"Mounting bracket for a 50mm stepper motor, 4 holes, 5mm fillets, 3mm thick."</li>
-          <li>"Gear with 20 teeth, module 2, 10mm thick, 5mm bore, aluminum."</li>
-          <li>"Pipe flange, 100mm outer, 50mm bore, 10mm thick, 4 bolt holes."</li>
+          <li>"Mounting bracket for a 50mm stepper motor, 4 bolt holes, 5mm fillets, 3mm wall thickness."</li>
+          <li>"Spur gear with 20 teeth, module 2, 10mm face width, 5mm center bore, aluminum."</li>
+          <li>"Pipe flange, 100mm outer diameter, 50mm inner bore, 10mm thickness, 4 mounting holes."</li>
         </ul>
       </div>
     </div>
@@ -622,18 +610,13 @@
     <a href="#top" class="logo" style="font-size:1.2rem;">Easy<span>CAD</span></a>
     <ul class="foot-links">
       <li><a href="#how">How it works</a></li>
-      <li><a href="#audience">Who it's for</a></li>
+      <li><a href="#audience">Built for</a></li>
       <li><a href="#okx">OKX Marketplace</a></li>
     </ul>
   </div>
-  <div class="wrap foot-note">Natural language to parametric CAD, built for the OKX Agent Marketplace.</div>
+  <div class="wrap foot-note">Natural language to parametric CAD, built for high-reliability autonomous workflows and the OKX Agent Marketplace.</div>
 </footer>
 
-<!--
-  build/three.js and build/three.min.js (old global UMD build) were
-  deprecated at r150 and removed entirely at r161, same with the legacy
-  non-module examples/js/* loaders. ES modules via an import map instead.
--->
 <script type="importmap">
 {
     "imports": {
@@ -647,12 +630,8 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { STLLoader } from "three/addons/loaders/STLLoader.js";
 (function(){
-  // ---------- Backend wiring for the live demo ----------
-  // Confirmed live 2026-08-05 (curl POST /api/keys/generate returned a
-  // real key). Regular visitors now work out of the box - the hidden
-  // config box (?config=1) still exists for pointing at a different
-  // backend later without a redeploy.
   const DEFAULT_API_BASE = "https://nitocad-production.up.railway.app";
+  const SHOW_DOWNLOADS = true;
 
   const demoCfg = document.getElementById('demoCfg');
   const apiBaseInput = document.getElementById('apiBase');
@@ -666,11 +645,6 @@ import { STLLoader } from "three/addons/loaders/STLLoader.js";
   const downloadsEl = document.getElementById('demoDownloads');
   const descriptionEl = document.getElementById('description');
 
-  // Hidden by default (see the display:none on #demoCfg in the HTML).
-  // Visit this page with ?config=1 once to reveal the box, set your
-  // backend URL, hit Save - it's cached in localStorage after that, so
-  // you never need the query param again on that browser. Regular
-  // visitors never see this box at all.
   if (new URLSearchParams(location.search).has('config')) {
     demoCfg.style.display = 'flex';
   }
@@ -678,11 +652,6 @@ import { STLLoader } from "three/addons/loaders/STLLoader.js";
   function getApiBase(){ return localStorage.getItem('easycad_api_base') || DEFAULT_API_BASE; }
   function setApiBase(v){ localStorage.setItem('easycad_api_base', v.replace(/\/$/, '')); }
 
-  // /generate requires an X-API-Key header (see security.py) - this
-  // wasn't in the original draft of this page, which would have gotten
-  // a 401 on every real submission. Same bootstrap pattern as the rest
-  // of the demo: mint one service key per backend via
-  // POST /api/keys/generate, cache it in localStorage.
   let SERVICE_API_KEY = null;
   async function ensureServiceKey(base){
     const cached = localStorage.getItem('easycad_service_key_' + base);
@@ -711,7 +680,6 @@ import { STLLoader } from "three/addons/loaders/STLLoader.js";
     btn.addEventListener('click', () => { descriptionEl.value = btn.dataset.ex; });
   });
 
-  // ---------- 3D viewer (Three.js), same pattern as the original ----------
   let scene, camera, renderer, controls, currentMesh;
 
   function initViewer(){
@@ -759,8 +727,6 @@ import { STLLoader } from "three/addons/loaders/STLLoader.js";
       },
       undefined,
       function onError(err){
-        // Without this, a 404/CORS'd/malformed STL fails silently and the
-        // preview pane just stays an empty gray box with no signal why.
         console.error('STL load failed for', url, err);
         statusEl.classList.add('err');
         statusEl.textContent = 'Generated, but the 3D preview failed to load.';
@@ -789,25 +755,33 @@ import { STLLoader } from "three/addons/loaders/STLLoader.js";
       warningsEl.innerHTML = html;
     }
 
-    // step_url/stl_url are either absolute R2 links or a relative
-    // /download/... fallback path (see storage.py) - only the latter
-    // needs the API base prefixed. Reconstructing from step_file/
-    // stl_file (a local server-side path) breaks the moment R2 is
-    // configured, since that path no longer corresponds to anything
-    // servable from this backend.
     function resolveUrl(pathOrUrl){
       if(!pathOrUrl) return null;
       return /^https?:\/\//.test(pathOrUrl) ? pathOrUrl : base + pathOrUrl;
     }
     const stlUrl = resolveUrl(data.stl_url);
 
-    // Full STEP/STL file access is an OKX-marketplace-only feature - the
-    // free demo shows the 3D preview and parsed parameters, with a nudge
-    // to buy the full job there instead of a download link. Same pattern
-    // as Stitchfren's demo-dxf-upsell.
-    downloadsEl.innerHTML =
-      '<p>Want the STEP/STL files for this part? Full file access ships with the full job on the OKX Agent Marketplace.</p>' +
-      '<a class="btn btn-primary" href="https://www.okx.ai/agents/YOUR-LISTING-ID" target="_blank" rel="noopener">Get the full package on OKX</a>';
+    if (SHOW_DOWNLOADS) {
+      const formatLabels = {
+        step: 'STEP (3D solid)',
+        stl: 'STL (mesh)',
+        iges: 'IGES (3D solid)',
+        dxf: 'DXF (2D cut layers)',
+        pdf: 'PDF (1:1 drawing)',
+      };
+      let links = '';
+      for (const [fmt, label] of Object.entries(formatLabels)) {
+        const url = resolveUrl(data[`${fmt}_url`]);
+        if (url) links += `<a href="${url}" target="_blank" rel="noopener">↓ ${label}</a>`;
+      }
+      downloadsEl.innerHTML =
+        (data.job_id ? `<p class="demo-dl-meta">Job <code>${data.job_id}</code> - every file below was generated from the same run.</p>` : '') +
+        `<div class="demo-dl-links">${links}</div>`;
+    } else {
+      downloadsEl.innerHTML =
+        '<p>Need production CAD files (STEP, DXF, IGES, PDF)? Access full multi-format downloads through the EasyCAD Agent skill on OKX Marketplace.</p>' +
+        '<a class="btn btn-primary" href="https://www.okx.ai/agents/YOUR-LISTING-ID" target="_blank" rel="noopener">Access Full Skill on OKX</a>';
+    }
 
     loadSTL(stlUrl);
   }
@@ -826,19 +800,17 @@ import { STLLoader } from "three/addons/loaders/STLLoader.js";
     try{
       if(!SERVICE_API_KEY) await ensureServiceKey(base);
 
+      const requestBody = {
+        description: description,
+        formats: SHOW_DOWNLOADS ? ['step', 'stl', 'iges', 'dxf', 'pdf'] : ['step', 'stl'],
+      };
+
       let res = await fetch(base + '/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-API-Key': SERVICE_API_KEY },
-        body: JSON.stringify({ description: description })
+        body: JSON.stringify(requestBody)
       });
 
-      // A cached key can go stale without the browser knowing - e.g.
-      // Railway's container filesystem is ephemeral, so a backend
-      // redeploy wipes the sqlite api_keys table and any key minted
-      // before that redeploy now 401s. Rather than surface a confusing
-      // "Generation failed" for what's really an expired-key problem,
-      // clear the stale cache, mint a fresh key, and retry once before
-      // giving up.
       if(res.status === 401){
         localStorage.removeItem('easycad_service_key_' + base);
         SERVICE_API_KEY = null;
@@ -846,7 +818,7 @@ import { STLLoader } from "three/addons/loaders/STLLoader.js";
         res = await fetch(base + '/generate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'X-API-Key': SERVICE_API_KEY },
-          body: JSON.stringify({ description: description })
+          body: JSON.stringify(requestBody)
         });
       }
 
@@ -855,10 +827,6 @@ import { STLLoader } from "three/addons/loaders/STLLoader.js";
         throw new Error(data.error || data.detail || `Generation failed (HTTP ${res.status}).`);
       }
       statusEl.textContent = 'Done.';
-      // #viewer lives inside #demoResults, which is display:none until
-      // this class is added - initViewer() measures clientWidth/clientHeight,
-      // so the panel must be visible *before* we initialize the renderer,
-      // otherwise it sizes itself to 0x0 and nothing ever paints.
       resultsEl.classList.add('active');
       if(!scene) initViewer();
       renderResult(base, data);
