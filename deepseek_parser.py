@@ -18,10 +18,12 @@ working). Test with a real key before trusting this in production.
 """
 
 import json
-import os
-from typing import Optional
 
+from config import settings
+from logging_config import get_logger
 from smart_parser import ParsedParameters, parse_description as regex_fallback_parse
+
+logger = get_logger(__name__)
 
 
 SYSTEM_PROMPT = """You are a CAD parameter extraction system. Parse natural language descriptions of mechanical parts into structured JSON.
@@ -83,7 +85,15 @@ def parse_with_deepseek(description: str, api_key: str, model: str = "deepseek-v
     try:
         from openai import OpenAI  # DeepSeek's API is OpenAI-compatible
 
-        client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
+        # Explicit timeout - without one, a stalled DeepSeek call blocks
+        # the request (and, since generate_from_text runs synchronously,
+        # a whole worker) indefinitely instead of falling back to the
+        # regex parser like every other failure mode here does.
+        client = OpenAI(
+            api_key=api_key,
+            base_url=settings.DEEPSEEK_BASE_URL,
+            timeout=settings.DEEPSEEK_TIMEOUT_SECONDS,
+        )
 
         response = client.chat.completions.create(
             model=model,
@@ -123,15 +133,14 @@ def parse_with_deepseek(description: str, api_key: str, model: str = "deepseek-v
         )
 
     except Exception as e:
-        print(f"DeepSeek API error: {e}")
-        print("Falling back to regex-based parser")
+        logger.warning("DeepSeek API error, falling back to regex parser: %s", e)
         fallback = regex_fallback_parse(description)
         fallback.warnings.append(f"DeepSeek call failed ({e}), used regex fallback instead")
         return fallback
 
 
-def parse_description(description: str, use_deepseek: Optional[bool] = None,
-                       api_key: Optional[str] = None, model: str = "deepseek-v4-flash") -> ParsedParameters:
+def parse_description(description: str, use_deepseek: bool | None = None,
+                       api_key: str | None = None, model: str = "deepseek-v4-flash") -> ParsedParameters:
     """
     Drop-in replacement for smart_parser.parse_description with an added
     real-LLM path.
@@ -149,7 +158,7 @@ def parse_description(description: str, use_deepseek: Optional[bool] = None,
     available - useful for a caller who wants deterministic, LLM-free
     parsing on purpose.
     """
-    resolved_key = api_key or os.environ.get("DEEPSEEK_API_KEY")
+    resolved_key = api_key or settings.DEEPSEEK_API_KEY
 
     if use_deepseek is False:
         return regex_fallback_parse(description)

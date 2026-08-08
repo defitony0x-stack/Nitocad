@@ -1,12 +1,26 @@
 cadquery==2.3.1
+ezdxf==1.3.5      # exporters.py - multi-view orthographic DXF export (VISIBLE/HIDDEN/LABELS/BORDER)
+reportlab==4.2.5  # exporters.py - 1:1 scale vector PDF technical drawings with title block
 fastapi==0.115.12
 uvicorn==0.35.0
 pydantic==2.11.7
+pydantic-settings==2.6.1   # config.py - typed env var loading, replaces scattered os.getenv
 python-multipart==0.0.9
 jinja2==3.1.2
 numpy>=1.26.4,<2.0
 openai==1.35.13   # DeepSeek client (deepseek_parser.py) - OpenAI-compatible API via base_url override
 boto3>=1.34.0   # R2 (S3-compatible) storage - see storage.py, optional at runtime
+slowapi==0.1.9   # per-IP rate limiting on /generate and /api/keys/generate - see web_app.py
+
+# --- dev / test / lint (not needed at runtime, but pinned here so a
+# single `pip install -r requirements.txt` gets a fully working dev
+# environment - see also pyproject.toml's [project.optional-dependencies]
+# for the `pip install -e ".[dev]"` alternative) ---
+pytest==8.3.4
+pytest-cov==6.0.0
+httpx==0.28.1        # required by fastapi.testclient.TestClient
+ruff==0.8.4
+mypy==1.13.0
 
 # MCP / A2MCP (a2mcp/) - real OKX Payment SDK integration, ported from
 # Stitchfren's backend/cutline/requirements.txt. okxweb3-app-x402 provides

@@ -1,7 +1,8 @@
 """
 Geometric validation and auto-correction for CAD parameters.
 """
-from typing import Dict, Any, List, Tuple
+from typing import Any
+
 
 class ValidationError(Exception):
     """Raised when geometry is invalid."""
@@ -10,9 +11,9 @@ class ValidationError(Exception):
 class ValidationResult:
     """Result of validation with corrections."""
     def __init__(self):
-        self.errors: List[str] = []
-        self.warnings: List[str] = []
-        self.corrections: Dict[str, Any] = {}
+        self.errors: list[str] = []
+        self.warnings: list[str] = []
+        self.corrections: dict[str, Any] = {}
         self.is_valid: bool = True
     
     def add_error(self, msg: str):
@@ -25,13 +26,13 @@ class ValidationResult:
     def add_correction(self, param: str, old_value: Any, new_value: Any):
         self.corrections[param] = {'old': old_value, 'new': new_value}
 
-def validate_motor_mount(params: Dict[str, Any]) -> ValidationResult:
+def validate_motor_mount(params: dict[str, Any]) -> ValidationResult:
     """Validate motor mount parameters."""
     result = ValidationResult()
     
     thickness = params.get('thickness_mm', 3.0)
     hole_diameter = params.get('hole_diameter_mm', 3.2)
-    fillet_radius = params.get('fillet_radius_mm', 2.0)
+    fillet_radius = params.get('fillet_radius_mm', 1.0)
     motor_size = params.get('motor_size_mm', 50.0)
     
     # Hole diameter must be reasonable
@@ -52,7 +53,7 @@ def validate_motor_mount(params: Dict[str, Any]) -> ValidationResult:
     
     return result
 
-def validate_l_bracket(params: Dict[str, Any]) -> ValidationResult:
+def validate_l_bracket(params: dict[str, Any]) -> ValidationResult:
     """Validate L-bracket parameters."""
     result = ValidationResult()
     
@@ -61,7 +62,7 @@ def validate_l_bracket(params: Dict[str, Any]) -> ValidationResult:
     depth = params.get('depth_mm', 40.0)
     thickness = params.get('thickness_mm', 3.0)
     hole_diameter = params.get('hole_diameter_mm', 3.2)
-    fillet_radius = params.get('fillet_radius_mm', 2.0)
+    fillet_radius = params.get('fillet_radius_mm', 1.0)
     
     # All dimensions must be positive
     for dim_name, dim_value in [('width', width), ('height', height), ('depth', depth), ('thickness', thickness)]:
@@ -88,7 +89,7 @@ def validate_l_bracket(params: Dict[str, Any]) -> ValidationResult:
     
     return result
 
-def validate_flat_plate(params: Dict[str, Any]) -> ValidationResult:
+def validate_flat_plate(params: dict[str, Any]) -> ValidationResult:
     """Validate flat plate parameters."""
     result = ValidationResult()
     
@@ -125,7 +126,7 @@ def validate_flat_plate(params: Dict[str, Any]) -> ValidationResult:
     
     return result
 
-def validate_shaft(params: Dict[str, Any]) -> ValidationResult:
+def validate_shaft(params: dict[str, Any]) -> ValidationResult:
     """Validate shaft parameters."""
     result = ValidationResult()
     
@@ -142,7 +143,7 @@ def validate_shaft(params: Dict[str, Any]) -> ValidationResult:
     
     return result
 
-def validate_gear(params: Dict[str, Any]) -> ValidationResult:
+def validate_gear(params: dict[str, Any]) -> ValidationResult:
     """Validate gear parameters."""
     result = ValidationResult()
     
@@ -165,7 +166,7 @@ def validate_gear(params: Dict[str, Any]) -> ValidationResult:
     
     return result
 
-def validate_bearing(params: Dict[str, Any]) -> ValidationResult:
+def validate_bearing(params: dict[str, Any]) -> ValidationResult:
     """Validate bearing parameters."""
     result = ValidationResult()
     
@@ -182,7 +183,7 @@ def validate_bearing(params: Dict[str, Any]) -> ValidationResult:
     
     return result
 
-def validate_simple_box(params: Dict[str, Any]) -> ValidationResult:
+def validate_simple_box(params: dict[str, Any]) -> ValidationResult:
     """Validate box parameters."""
     result = ValidationResult()
     
@@ -200,7 +201,115 @@ def validate_simple_box(params: Dict[str, Any]) -> ValidationResult:
     
     return result
 
-def validate_parameters(part_type: str, params: Dict[str, Any]) -> Tuple[Dict[str, Any], ValidationResult]:
+def validate_connecting_rod(params: dict[str, Any]) -> ValidationResult:
+    """Validate connecting rod parameters."""
+    result = ValidationResult()
+
+    center_distance = params.get('center_distance_mm', 120.0)
+    if center_distance <= 0:
+        result.add_error("center_distance_mm must be positive")
+
+    big_bore = params.get('big_end_diameter_mm', 24.0)
+    big_boss = params.get('big_end_boss_diameter_mm', 40.0)
+    small_bore = params.get('small_end_diameter_mm', 12.0)
+    small_boss = params.get('small_end_boss_diameter_mm', 22.0)
+
+    for bore_name, bore_val in (('big_end_diameter_mm', big_bore), ('small_end_diameter_mm', small_bore)):
+        if bore_val <= 0:
+            result.add_error(f"{bore_name} must be positive")
+
+    # A boss must have enough material around its own bore to be a
+    # boss at all - same failure mode as validate_bearing's
+    # outer-not-greater-than-inner check, applied to each end.
+    if big_boss > 0 and big_bore > 0 and big_boss <= big_bore:
+        new_boss = big_bore * 1.6
+        result.add_error(f"big_end_boss_diameter_mm ({big_boss}mm) must exceed big_end_diameter_mm ({big_bore}mm)")
+        result.add_correction('big_end_boss_diameter_mm', big_boss, new_boss)
+    if small_boss > 0 and small_bore > 0 and small_boss <= small_bore:
+        new_boss = small_bore * 1.6
+        result.add_error(f"small_end_boss_diameter_mm ({small_boss}mm) must exceed small_end_diameter_mm ({small_bore}mm)")
+        result.add_correction('small_end_boss_diameter_mm', small_boss, new_boss)
+
+    # If the two bosses (as currently sized) would physically overlap
+    # given the requested center distance, shrink neither silently -
+    # this is exactly the kind of infeasible-input case the shaft/gear
+    # validators handle by widening the separating dimension instead of
+    # guessing which of two conflicting sizes the caller cared about.
+    corrected_big_boss = result.corrections.get('big_end_boss_diameter_mm', {}).get('new', big_boss)
+    corrected_small_boss = result.corrections.get('small_end_boss_diameter_mm', {}).get('new', small_boss)
+    min_center_distance = (corrected_big_boss + corrected_small_boss) / 2
+    if center_distance > 0 and center_distance < min_center_distance:
+        new_distance = min_center_distance + 5.0
+        result.add_warning(
+            f"center_distance_mm ({center_distance}mm) is too short for the boss sizes "
+            f"given - the two ends would overlap. Increasing to {new_distance:.1f}mm."
+        )
+        result.add_correction('center_distance_mm', center_distance, new_distance)
+
+    shank_width = params.get('shank_width_mm', 14.0)
+    if shank_width <= 0:
+        result.add_error("shank_width_mm must be positive")
+
+    thickness = params.get('thickness_mm', 12.0)
+    if thickness <= 0:
+        result.add_error("thickness_mm must be positive")
+
+    return result
+
+def validate_crankshaft(params: dict[str, Any]) -> ValidationResult:
+    """Validate crankshaft parameters."""
+    result = ValidationResult()
+
+    num_throws = params.get('num_throws', 4)
+    if not isinstance(num_throws, int) or num_throws < 1:
+        result.add_error("num_throws must be a positive integer")
+    elif num_throws > 12:
+        # Not a hard geometric limit like the others here - past this,
+        # build time and OCCT boolean-union robustness (many discrete
+        # bodies unioned in sequence) both degrade badly enough that a
+        # warning belongs here even though it would technically build.
+        result.add_warning(
+            f"num_throws={num_throws} is unusually high and will be slow to build "
+            "and more likely to hit an OCCT union failure - verify this is intentional."
+        )
+
+    stroke = params.get('stroke_mm', 80.0)
+    if stroke <= 0:
+        result.add_error("stroke_mm must be positive")
+
+    main_dia = params.get('main_journal_diameter_mm', 50.0)
+    rod_dia = params.get('rod_journal_diameter_mm', 45.0)
+    for name, val in (('main_journal_diameter_mm', main_dia), ('rod_journal_diameter_mm', rod_dia)):
+        if val <= 0:
+            result.add_error(f"{name} must be positive")
+
+    # This isn't a hard geometric failure mode - CadQuery's union handles
+    # overlapping solids fine regardless of how close the rod journal's
+    # offset is to the main axis. It's a plausibility check: a stroke
+    # small enough that the rod journal barely clears the main/rod
+    # journal envelopes doesn't read as an actual crank throw anymore,
+    # same spirit as validate_gear()'s "few teeth -> undercut" warning.
+    crank_radius = stroke / 2
+    min_radius = (main_dia + rod_dia) / 4 + 5.0
+    if crank_radius > 0 and crank_radius < min_radius:
+        new_stroke = min_radius * 2
+        result.add_warning(
+            f"stroke_mm ({stroke}mm) is too small for the given journal diameters - "
+            f"the rod journal would overlap the main journal. Increasing to {new_stroke:.1f}mm."
+        )
+        result.add_correction('stroke_mm', stroke, new_stroke)
+
+    phase_angles = params.get('phase_angles_deg')
+    if phase_angles is not None and isinstance(num_throws, int) and len(phase_angles) != num_throws:
+        result.add_warning(
+            f"phase_angles_deg has {len(phase_angles)} entries but num_throws is "
+            f"{num_throws} - the template will fall back to even spacing."
+        )
+
+    return result
+
+
+def validate_parameters(part_type, params):
     """
     Validate and auto-correct parameters for any part type.
     Returns corrected parameters and validation result.
@@ -213,6 +322,8 @@ def validate_parameters(part_type: str, params: Dict[str, Any]) -> Tuple[Dict[st
         'gear': validate_gear,
         'bearing': validate_bearing,
         'simple_box': validate_simple_box,
+        'connecting_rod': validate_connecting_rod,
+        'crankshaft': validate_crankshaft,
     }
     
     validator = validators.get(part_type)

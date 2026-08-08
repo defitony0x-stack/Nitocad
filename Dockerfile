@@ -27,12 +27,32 @@ RUN pip install --no-cache-dir --upgrade pip \
 
 COPY . .
 
+# Runs as a dedicated, unprivileged user rather than root - CadQuery/OCCT
+# don't need root, and running as root in a container is a needless
+# privilege-escalation surface if the process is ever compromised via a
+# dependency vuln. Output dir is created and owned by that user up front
+# so /generate's first write doesn't hit a permissions error.
+#
+# /data is pre-created and chowned here too, not just /app/output: when
+# docker-compose.yml mounts a *named* volume at /data on a fresh volume,
+# Docker seeds it from whatever already exists at that path in the image
+# layer (including ownership) - so if this directory didn't exist yet, or
+# was still root-owned, the app's first write to the mounted volume would
+# fail with a permissions error despite USER nitocad below being correct
+# for everywhere else in the image.
+RUN useradd --create-home --uid 1000 nitocad \
+    && mkdir -p /app/output /data \
+    && chown -R nitocad:nitocad /app /data
+USER nitocad
+
 # Railway's ephemeral filesystem wipes ./output and the sqlite file on
 # every redeploy/restart - see storage.py and db.py's DB_PATH note.
 # Mount a persistent volume at /data and set DB_PATH=/data/nl_to_cad.db
 # (and configure R2 for generated files) before relying on this in
 # production.
 ENV PORT=8000
+ENV ENVIRONMENT=production
+ENV LOG_FORMAT=json
 
 # Without this, Python fully buffers stdout when it isn't attached to a
 # real terminal - which is exactly what Railway's log capture looks like
@@ -45,6 +65,13 @@ ENV PORT=8000
 ENV PYTHONUNBUFFERED=1
 
 EXPOSE 8000
+
+# Container-level liveness check hitting the same /healthz route the
+# orchestrator's own probe would use - lets `docker ps` and
+# `docker inspect --format='{{.State.Health.Status}}'` show a failing
+# instance locally, before it ever reaches Railway's own health checking.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD python -c "import urllib.request,os; urllib.request.urlopen(f'http://127.0.0.1:{os.environ.get(\"PORT\",8000)}/healthz', timeout=3)" || exit 1
 
 # --proxy-headers + --forwarded-allow-ips="*": Railway terminates TLS at
 # its edge (railway-hikari) and forwards plain HTTP to this container.

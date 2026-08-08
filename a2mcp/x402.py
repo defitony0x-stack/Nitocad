@@ -33,7 +33,6 @@ kwargs, paste the TypeError back - it'll name the actual accepted signature.
 from __future__ import annotations
 
 import os
-from typing import Optional
 
 from x402.http import (
     OKXAuthConfig,
@@ -81,8 +80,8 @@ class PaymentConfigError(Exception):
     the explicit local-dev opt-out isn't set. Message is safe to log."""
 
 
-_facilitator: Optional[OKXFacilitatorClient] = None
-_resource_server: Optional[x402ResourceServer] = None
+_facilitator: OKXFacilitatorClient | None = None
+_resource_server: x402ResourceServer | None = None
 
 
 def _get_resource_server() -> x402ResourceServer:

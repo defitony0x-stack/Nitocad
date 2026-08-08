@@ -17,8 +17,8 @@ import tempfile
 # Isolate this run's db + output dir so it doesn't touch real data
 os.environ["DB_PATH"] = os.path.join(tempfile.gettempdir(), "smoke_test.db")
 
-from cad_generator import CADGenerator
 import db
+from cad_generator import CADGenerator
 
 TEST_CASES = [
     "mounting bracket for a 50mm stepper motor, 4 holes, 5mm fillets, 3mm thick",
@@ -34,6 +34,8 @@ TEST_CASES = [
     "cable channel bracket, 60mm long, 20mm wide, 15mm tall, 2mm walls",
     "i-beam structural beam, 200mm long, 100mm tall, 50mm wide, 5mm thick",
     "c-channel structural beam, 200mm long, 100mm tall, 50mm wide, 5mm thick",
+    "connecting rod, 120mm center distance, 24mm big end bore, 12mm small end bore",
+    "crankshaft with 4 throws, 80mm stroke",
 ]
 
 
@@ -73,7 +75,7 @@ def main() -> int:
             reimported = cq.importers.importStep(step_path)
             solid_count = len(reimported.solids().vals())
             if solid_count == 0:
-                print(f"  FAIL: STEP file re-imports but contains zero solids")
+                print("  FAIL: STEP file re-imports but contains zero solids")
                 failures.append(description)
                 continue
         except Exception as e:

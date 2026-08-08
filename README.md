@@ -1,6 +1,94 @@
 # Natural Language to Parametric CAD - Full Version
 
-Convert plain English descriptions into manufacturable .STEP CAD files using smart parsing and CadQuery.
+Convert plain English descriptions into manufacturable CAD files (STEP,
+STL, IGES, DXF, PDF) using smart parsing and CadQuery. **Every
+generation produces all five formats by default** — see v2.2.1 below.
+
+## v2.2.1: Multi-format export is now the default
+
+`exporters.DEFAULT_FORMATS` (what `/generate` falls back to when the
+caller omits `formats` entirely) was `("step", "stl")` — the v2.2.0
+export matrix below was opt-in only. Changed the default to all five
+supported formats: `("step", "stl", "iges", "dxf", "pdf")`. A caller
+that wants the old, narrower two-format behavior back can still get it
+by passing `formats: ["step", "stl"]` explicitly — the opt-in mechanism
+itself didn't change, only what happens when it's omitted.
+`tests/test_exporters.py`'s default-format assertions were updated to
+match. One-line constant change, no new logic, but — same standing
+caveat as everything export-related below — not yet run against a real
+CadQuery/OCP install in this environment.
+
+## v2.2.0: Tier-1 export formats + engine components
+
+Two passes landed on top of the v2.0 hardening pass below, neither of
+which the rest of this README reflected until now:
+
+- **Multi-format export (`exporters.py`)** — `/generate` no longer only
+  produces STEP/STL. It accepts an optional `formats` list —
+  `["step", "stl", "iges", "dxf", "pdf"]` — which as of v2.2.1 (see
+  above) is also what it produces by default when omitted. `export_iges` calls OCP's
+  `IGESControl_Writer` directly (cadquery 2.3.1's own `exporters`
+  module has no IGES `ExportType`). `export_dxf`/`export_pdf` are built
+  from a real horizontal section through the solid (layer-classified
+  `PIECE_OUTLINE`/`HOLES`/`CENTERLINES` for DXF; a 1:1 scale vector
+  drawing with a title block for PDF) — correct for the
+  flat/plate/bracket-style parts this catalog is dominated by, **not**
+  a full multi-view orthographic projection. New download routes:
+  `/download/iges/{filename}`, `/download/dxf/{filename}`,
+  `/download/pdf/{filename}`. See `exporters.py`'s module docstring for
+  the full scope notes, including why GLTF isn't included.
+- **Two new engine-component templates**: `connecting_rod` (small-end/
+  big-end bosses with bores, I-beam-style shank, multi-body boolean
+  union) and `crankshaft` (configurable throws, main journals, offset
+  rod journals, counterweight webs, optional nose/flywheel flange).
+  Both are the most geometrically complex templates in the catalog —
+  multi-body unions rather than a single extrude+cut — and both caught
+  real bugs during development (off-origin bore placement, a "backbone
+  cylinder" crank profile that left main-journal material running
+  through the throw regions) that are now regression-tested in
+  `tests/test_cad_templates.py`.
+- **Real MCP server (`a2mcp/`)**, mounted at `/mcp` on this same FastAPI
+  app, replacing the standalone `mcp-gateway/` Node service (now
+  deprecated — see that section below). One tool, `generate_cad_part`,
+  payment-gated per-call via OKX's official Payment SDK
+  (`okxweb3-app-x402`) for OKX's A2MCP marketplace.
+
+Combined, the actual part-template count is **25**, not the 23 the
+rest of this README used to claim (18 originally shipped + 3 hardware
+templates + these 2 engine components) — see `cad_templates/__init__.py`.
+None of `exporters.py`, `connecting_rod`/`crankshaft`, or the `a2mcp/`
+migration have been run against a real CadQuery/native-dependency
+install yet (same standing caveat as everything else below written in
+a sandbox with no network access) — run `make test` / `python
+smoke_test.py` on your VPS before relying on any of it.
+
+## v2.0: Professional hardening pass
+
+A structural pass focused on config, observability, error handling,
+security, and testing — the generation engine itself (parser, templates,
+validator) is untouched. Full detail in [`CHANGELOG.md`](CHANGELOG.md);
+highlights:
+
+- **`config.py`** — one typed, validated `Settings` object instead of
+  ~15 scattered `os.getenv()` calls. See `.env.example` for every knob.
+- **Structured logging** (`logging_config.py`) — JSON or console format,
+  per-request correlation IDs, replaces every `print()` in the request path.
+- **Real error handling** (`exceptions.py`) — a typed exception hierarchy
+  with FastAPI handlers that return the right status code and never leak
+  a traceback into a response body.
+- **Fixed a path-traversal bug** in the `/download/{step,stl}/{filename}`
+  routes (`file_safety.py`).
+- **Rate limiting** on `/generate` and `/api/keys/generate` (`slowapi`).
+- **`/healthz` + `/readyz`** endpoints for container/orchestrator health checks.
+- **A real test suite** (`tests/`) — unit tests for the parser/validator,
+  API integration tests, and CadQuery-gated geometry tests covering the
+  fillet-degradation and structural-beam regressions noted below.
+  Run `make check` for the fast suite, `make test` for everything.
+- **CI** (`.github/workflows/ci.yml`), pre-commit hooks, `pyproject.toml`
+  tooling config, a `Makefile`, and a hardened non-root Dockerfile with
+  a `HEALTHCHECK`.
+
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for local setup and dev workflow, and [`DEPLOYMENT.md`](DEPLOYMENT.md) for deploying to a VPS with Docker Compose + Caddy.
 
 ## Production hardening pass (added after DeepSeek integration)
 
@@ -215,58 +303,61 @@ hopefully.
   fine for hosting a *separate* static frontend only - never for this
   FastAPI/CadQuery backend.
 
-## `mcp-gateway/` — OKX A2MCP listing
+## `a2mcp/` — OKX A2MCP listing (current) and `mcp-gateway/` (deprecated)
 
-Node/Express service exposing this backend's one real job — parse +
-generate + validate + export — as a single x402-gated route,
-`POST /mcp/generate-cad`, for OKX's A2MCP (agent-to-agent, pay-per-call)
-listing mode. Mirrors Stitchfren's `backend/mcp-gateway/` almost exactly
-(same OKX auth-signing code, same facilitator-envelope unwrap, same
-payment-gate-or-warn startup behavior), with one deliberate difference:
-**no job polling.** Stitchfren's pattern-drafting job runs long enough to
-need Celery + a submit/poll split; CAD generation here is one synchronous
-FastAPI call that returns in 1-3 seconds, so the gateway just calls
-`/generate` once and returns the result — building a poll loop here would
-copy Stitchfren's shape without copying its reason for existing.
+**Current**: `a2mcp/server.py` is a real MCP protocol server (via
+`fastmcp`), mounted directly at `/mcp` on this same FastAPI app
+(`web_app.py` imports `mcp_app`/`mcp_app_gated` and mounts them at
+startup — see `app.mount("/mcp", mcp_app_gated)`). One tool,
+`generate_cad_part`, matching the "one real job this backend does"
+framing (parse + generate + validate + export). Payment gating
+(`a2mcp/x402.py`) uses OKX's **official Payment SDK**
+(`okxweb3-app-x402`), not a generic community x402 package. Gating
+happens in `X402Gate`, not inside the tool function: MCP session
+bootstrap (`initialize`/`notifications`/`initialized`/`ping`) and
+`tools/list` after a free `initialize` stay free so a real client can
+complete the handshake and discover the tool without paying; a bare,
+sessionless `tools/list` POST is still priced. `FREE_TOOL_NAMES` is
+empty — there's no free-preview tool, since the whole job (the STEP
+file) is what's being sold, unlike pattern-nesting-style products
+where a cheap preview is worth showing before charging.
 
-```bash
-cd mcp-gateway
-npm install
-cp .env.example .env   # fill in the values, see comments in server.js
-npm start
-```
+Configure via the same `OKX_API_KEY`/`OKX_SECRET_KEY`/`OKX_PASSPHRASE`/
+`PAY_TO_ADDRESS` env vars as before (see `.env.example`) — no separate
+process or deploy needed now, since `a2mcp/` runs inside the main
+backend.
 
-Until `OKX_API_KEY`/`OKX_SECRET_KEY`/`OKX_PASSPHRASE`/`PAY_TO_ADDRESS` are
-set, the gateway logs a warning and runs **without payment gating** —
-fine for local testing, not for pointing OKX's listing at it.
+**Deprecated**: `mcp-gateway/` (the standalone Node/Express service,
+`POST /mcp/generate-cad`, using the community `@x402/*` packages) is
+**superseded** by `a2mcp/` — its own file header now says so explicitly.
+It failed OKX's A2MCP review for not integrating the official OKX
+Payment SDK, which is the entire reason `a2mcp/` exists. The code is
+kept in the repo for reference/rollback only. **Do not point a new OKX
+listing at it**; decommission its Railway deployment once `a2mcp/` is
+verified live.
 
 **Not yet verified**: no network access in the environment this was
-built in, so `npm install` and a real call through the gateway (with or
-without payment gating) haven't been run. `@x402/core` (2.3.0),
-`@x402/evm` (2.9.0), and `@x402/express` (2.3.0) were checked against
-npm directly as of 2026-07-31 — re-verify if you're reading this later
-and installs fail.
+built in, so neither `a2mcp/`'s real MCP handshake nor a real payment-
+gated call has been run end-to-end. `okxweb3-app-x402` and
+`fastmcp==2.14.7` (`requirements.txt`) were not independently confirmed
+against PyPI at time of writing — check before relying on them.
 
 **Still to do on OKX's side**: registering as an ASP and pointing the
-marketplace at `/mcp/generate-cad` happens through OKX's own signup flow
-— not something this repo can do for you, same caveat as Stitchfren's.
+marketplace at `/mcp` happens through OKX's own signup flow — not
+something this repo can do for you.
 
 ## Deployment topology
 
-Three separate deploys, same split as Stitchfren:
+Two separate deploys (down from three — `a2mcp/`'s migration into the
+main FastAPI process retired the standalone gateway deploy):
 
 | Piece | Where | Why not somewhere else |
 |---|---|---|
-| FastAPI + CadQuery backend | Railway, **Docker** builder | CadQuery's OCP dependency needs system libs (`libgl1` etc.) and a pinned Python (3.9-3.12 only) that Railway's default Nixpacks builder has repeatedly failed to honor reliably (see `Dockerfile` comments, sourced from Railway's own help forum). A Dockerfile removes the guesswork. Not Vercel — OCP's wheel stack blows past Vercel's 250MB serverless function limit. |
+| FastAPI + CadQuery backend (now includes `/mcp` — see above) | Railway, **Docker** builder | CadQuery's OCP dependency needs system libs (`libgl1` etc.) and a pinned Python (3.9-3.12 only) that Railway's default Nixpacks builder has repeatedly failed to honor reliably (see `Dockerfile` comments, sourced from Railway's own help forum). A Dockerfile removes the guesswork. Not Vercel — OCP's wheel stack blows past Vercel's 250MB serverless function limit. |
 | `frontend/index.html` | Vercel / Netlify / GitHub Pages, static, no build step | It's one static file with a configurable API-endpoint box (localStorage), same pattern as Stitchfren's `frontend/`. |
-| `mcp-gateway/` | Railway, **Docker** builder, its own service | Needs its own `PAY_TO_ADDRESS`/OKX credentials and shouldn't share a process with the CadQuery backend it fronts. |
 
-Each of the three has its own `Dockerfile`/`railway.json` now (gateway's
-are in `mcp-gateway/`). On Railway: create three separate services
-pointed at the same repo with different root directories (`/` for the
-backend, `/mcp-gateway` for the gateway), or three separate repos if you
-prefer — either works, `railway.json` in each just tells Railway to use
-that directory's Dockerfile instead of guessing.
+`mcp-gateway/`'s `Dockerfile`/`railway.json` are still in the repo but
+should not be deployed as a live service going forward (see above).
 
 Before `frontend/index.html` is genuinely public, also tighten
 `web_app.py`'s CORS `allow_origins=["*"]` to your actual deployed
@@ -322,19 +413,24 @@ request returned any corrections. Fixed.
 
 **Left as-is, worth knowing about**: `llm_parser.py` (the original Claude
 integration) is still in the repo but no longer imported by
-`cad_generator.py`. Kept rather than deleted in case Claude support is
-wanted alongside or instead of DeepSeek later, the `anthropic` package
-stays in `requirements.txt` for the same reason.
+`cad_generator.py`. **Correction**: `requirements.txt` no longer
+carries the `anthropic` package — it was actually removed (it was
+fighting `openai`'s httpx version range and causing pip backtracking).
+If Claude support is wired back in later, re-add a current `anthropic`
+version, not the old pinned one that caused the conflict.
 
 ## What's New (All Limitations Fixed)
 
-### ✅ Expanded Part Library (20+ Templates)
+### ✅ Expanded Part Library (25 Templates — see `cad_templates/__init__.py`)
+- **Basic parts**: Motor mounts, L-brackets, flat plates, boxes/enclosures
 - **Primitives**: Shafts, bearings, spacers, washers, spheres
 - **Transmission**: Gears, pulleys, sprockets
 - **Structural**: I-beams, channels, angles, tubes
 - **Piping**: Pipes, flanges, elbows, tees
 - **Freeform**: Revolved, swept, and lofted shapes
 - **Misc**: Hinges, cams
+- **Hardware**: Hex standoffs, T-brackets, U-channel brackets
+- **Engine components**: Connecting rods, crankshafts (multi-body boolean unions — the most geometrically complex templates in the catalog)
 
 ### ✅ Smart Parser
 - Regex-based dimension extraction (handles mm, cm, inches, fractions)
@@ -365,6 +461,19 @@ stays in `requirements.txt` for the same reason.
 - Example library
 - Validation feedback
 - Auto-correction display
+
+### ✅ Multi-Format Export (`exporters.py`)
+- **STEP** / **STL** — original formats, unchanged behavior
+- **IGES** — exact B-rep, legacy mechanical CAD interchange
+- **DXF** — layer-classified 2D section (outline / holes / centerlines) for laser/plasma/waterjet cutting
+- **PDF** — 1:1 scale vector technical drawing with a title block
+- All five produced by default; pass `formats: [...]` in the `/generate` request body to narrow it (e.g. `["step", "stl"]` for the old behavior)
+- DXF/PDF come from a single horizontal section — correct for flat/plate/bracket-style parts, not a full multi-view orthographic drawing
+
+### ✅ Agent-to-Agent / Pay-Per-Call (`a2mcp/`)
+- Real MCP protocol server mounted at `/mcp` on this same backend
+- One tool, `generate_cad_part`, priced per call via OKX's official Payment SDK for the OKX A2MCP marketplace
+- Session bootstrap and tool discovery stay free; only the actual generation call is gated
 
 ## Installation
 
@@ -399,24 +508,35 @@ if result["success"]:
 
 ## Supported Part Types
 
+25 registered `part_type` values (`cad_templates/__init__.py`'s
+`TEMPLATES` dict is the source of truth — this list is kept in sync
+with it):
+
 1. **Motor Mount** - Stepper motor mounting plates
 2. **L-Bracket** - L-shaped brackets
 3. **Flat Plate** - Plates with hole patterns
 4. **Simple Box** - Enclosures with optional lids
 5. **Shaft** - Cylinders with optional keyways
 6. **Bearing** - Simple bearing representations
-7. **Spacer/Washer** - Ring-shaped parts
-8. **Gear** - Simplified spur gears
-9. **Pulley** - Belt pulleys
-10. **Sprocket** - Chain sprockets
-11. **Structural Beam** - I-beams, channels
-12. **Angle** - L-angle structural
-13. **Tube** - Hollow tubes (round, square, rectangular)
-14. **Pipe Fitting** - Pipes, elbows, tees
-15. **Flange** - Pipe flanges
-16. **Hinge** - Simple hinges
-17. **Cam** - Cam profiles
-18. **Freeform** - Revolved, swept, lofted shapes
+7. **Spacer** - Ring-shaped part
+8. **Washer** - Ring-shaped part
+9. **Sphere** - Simple spherical primitive
+10. **Gear** - Simplified spur gears
+11. **Pulley** - Belt pulleys
+12. **Sprocket** - Chain sprockets
+13. **Structural Beam** - I-beams, channels
+14. **Angle** - L-angle structural
+15. **Tube** - Hollow tubes (round, square, rectangular)
+16. **Pipe Fitting** - Pipes, elbows, tees
+17. **Flange** - Pipe flanges
+18. **Hinge** - Simple hinges
+19. **Cam** - Cam profiles
+20. **Freeform** - Revolved, swept, lofted shapes
+21. **Hex Standoff** - Hexagonal PCB/electronics standoff (diameter is across corners, not across flats)
+22. **T-Bracket** - T cross-section (cap + stem), extruded along its length
+23. **Channel Bracket** - Open U-channel (mounting channel / cable raceway / cradle)
+24. **Connecting Rod** - Small-end/big-end bosses with bores + I-beam-style shank, multi-body union
+25. **Crankshaft** - Configurable throws, main journals, offset rod journals, counterweight webs, optional nose/flywheel flange
 
 ## Example Descriptions
 
@@ -432,6 +552,11 @@ if result["success"]:
 "I-beam 100mm tall, 50mm wide, 200mm long, 5mm thick"
 "pipe 20mm outer, 2mm wall, 50mm long"
 "flange 100mm outer, 50mm bore, 10mm thick, 4 bolt holes"
+"hex standoff 6mm across corners, 12mm tall, M3 through hole"
+"T-bracket 40mm cap width, 30mm stem height, 60mm long, 3mm thick"
+"channel bracket 30mm wide, 20mm tall, 100mm long, 2mm thick"
+"connecting rod, 20mm big end bore, 10mm small end bore, 120mm center-to-center"
+"crankshaft, 4 throws, 30mm main journal diameter, 25mm rod journal diameter"
 ```
 
 ## Architecture
@@ -439,20 +564,23 @@ if result["success"]:
 ```
 User Description
     ↓
-Smart Parser (regex + inference)
+Smart Parser (regex fallback, or DeepSeek LLM extraction if a key is configured)
     ↓
 Parameter Validation & Auto-correction
     ↓
-Template Router
+Template Router (25 templates, cad_templates/__init__.py)
     ↓
 CadQuery Template Engine
     ↓
 OpenCASCADE Kernel (B-rep geometry)
     ↓
-Export .STEP + .STL
+Multi-format Export: STEP, STL, IGES, DXF, PDF (exporters.py)
     ↓
-3D Preview (Three.js)
+3D Preview (Three.js) + R2/local file storage + sqlite3 job history
 ```
+
+Also exposed as an MCP tool (`a2mcp/`, mounted at `/mcp`), payment-gated
+per call via OKX's official Payment SDK for the OKX A2MCP marketplace.
 
 ## Validation Examples
 

@@ -3,9 +3,11 @@ Smart parser with regex-based number extraction and constraint inference.
 Much more capable than simple keyword matching.
 """
 import re
-from typing import Dict, Any, Optional, List, Tuple
-from pydantic import BaseModel, Field
 from dataclasses import dataclass
+from typing import Any
+
+from pydantic import BaseModel, Field
+
 
 @dataclass
 class ExtractedDimension:
@@ -20,19 +22,19 @@ class ExtractedPattern:
     """A hole or feature pattern."""
     pattern_type: str  # 'rectangular', 'circular', 'linear'
     count: int
-    diameter: Optional[float] = None
-    spacing: Optional[float] = None
-    layout: Optional[str] = None
+    diameter: float | None = None
+    spacing: float | None = None
+    layout: str | None = None
 
 class ParsedParameters(BaseModel):
     """Structured parameters extracted from natural language."""
     part_type: str
-    parameters: Dict[str, Any]
-    material: Optional[str] = None
-    operations: List[Dict[str, Any]] = Field(default_factory=list)
-    assembly_parts: List[Dict[str, Any]] = Field(default_factory=list)
+    parameters: dict[str, Any]
+    material: str | None = None
+    operations: list[dict[str, Any]] = Field(default_factory=list)
+    assembly_parts: list[dict[str, Any]] = Field(default_factory=list)
     confidence: float = 0.0
-    warnings: List[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
 
 # Unit conversion
 UNIT_TO_MM = {
@@ -67,21 +69,10 @@ STANDARD_SIZES = {
     '3/8-16': {'diameter': 9.525, 'tap_drill': 8.0, 'clearance': 10.5},
 }
 
-def extract_all_dimensions(text: str) -> List[ExtractedDimension]:
+def extract_all_dimensions(text: str) -> list[ExtractedDimension]:
     """Extract all dimensions with units from text using regex."""
     dimensions = []
-    
-    # Pattern: number followed by unit
-    # Matches: 50mm, 50 mm, 2.5 inches, 3/4", 1-1/2", etc.
-    patterns = [
-        # Fractional inches: 1-1/2", 3/4"
-        r'(\d+(?:-\d+)?/\d+)\s*(["\']|inch|inches|in)\b',
-        # Decimal with unit: 50mm, 2.5 cm, 3 inches
-        r'(\d+(?:\.\d+)?)\s*(mm|millimeters?|cm|centimeters?|m|meters?|inch|inches|in|ft|feet|foot)\b',
-        # Bare numbers with context (will be assigned context later)
-        r'(\d+(?:\.\d+)?)\s*(?:x|by|×)\s*(\d+(?:\.\d+)?)',
-    ]
-    
+
     # Extract fractional inches
     for match in re.finditer(r'(\d+)?-?(\d+)/(\d+)\s*(["\']|inch|inches|in)', text, re.IGNORECASE):
         whole = int(match.group(1)) if match.group(1) else 0
@@ -155,7 +146,7 @@ def extract_all_dimensions(text: str) -> List[ExtractedDimension]:
     
     return dimensions
 
-def extract_hole_patterns(text: str) -> List[ExtractedPattern]:
+def extract_hole_patterns(text: str) -> list[ExtractedPattern]:
     """Extract hole patterns from text."""
     patterns = []
     text_lower = text.lower()
@@ -216,7 +207,7 @@ def extract_hole_patterns(text: str) -> List[ExtractedPattern]:
     
     return patterns
 
-def extract_operations(text: str) -> List[Dict[str, Any]]:
+def extract_operations(text: str) -> list[dict[str, Any]]:
     """Extract CAD operations like fillets, chamfers, shells."""
     operations = []
     text_lower = text.lower()
@@ -263,7 +254,7 @@ def extract_operations(text: str) -> List[Dict[str, Any]]:
     
     return operations
 
-def infer_part_type(text: str, dimensions: List[ExtractedDimension], operations: List[Dict]) -> str:
+def infer_part_type(text: str, dimensions: list[ExtractedDimension], operations: list[dict]) -> str:
     """Infer part type from text and extracted data."""
     text_lower = text.lower()
     
@@ -288,6 +279,14 @@ def infer_part_type(text: str, dimensions: List[ExtractedDimension], operations:
         return 't_bracket'
     elif any(word in text_lower for word in ['channel bracket', 'cable channel', 'cable clamp', 'cable clip', 'mounting channel']):
         return 'channel_bracket'
+    # Same shadowing concern as the three above: 'crankshaft' contains
+    # 'shaft' and 'connecting rod'/'conrod' would otherwise match the
+    # much more generic 'rod'/'pin' keywords in the plain shaft check
+    # further down - both need to be tested first.
+    elif any(word in text_lower for word in ['crankshaft', 'crank shaft', 'crank']):
+        return 'crankshaft'
+    elif any(word in text_lower for word in ['connecting rod', 'conrod', 'con-rod', 'con rod', 'piston rod']):
+        return 'connecting_rod'
     elif any(word in text_lower for word in ['l-bracket', 'l bracket', 'angle bracket']):
         return 'l_bracket'
     elif any(word in text_lower for word in ['shaft', 'axle', 'rod', 'pin']):
@@ -327,7 +326,7 @@ def infer_part_type(text: str, dimensions: List[ExtractedDimension], operations:
         else:
             return 'flat_plate'
 
-def infer_missing_dimensions(part_type: str, dimensions: List[ExtractedDimension], patterns: List[ExtractedPattern], description: str = "") -> Dict[str, Any]:
+def infer_missing_dimensions(part_type: str, dimensions: list[ExtractedDimension], patterns: list[ExtractedPattern], description: str = "") -> dict[str, Any]:
     """Infer missing dimensions based on part type and context."""
     params = {}
     text_lower = description.lower()
@@ -462,7 +461,24 @@ def infer_missing_dimensions(part_type: str, dimensions: List[ExtractedDimension
         params['height_mm'] = dim_map.get('height', 50.0)
         params['wall_thickness_mm'] = dim_map.get('thickness', 3.0)
         params['has_lid'] = False
-        
+
+    elif part_type == 'connecting_rod':
+        params['center_distance_mm'] = dim_map.get('length', dim_map.get('center_distance', 120.0))
+        params['big_end_diameter_mm'] = dim_map.get('bore', dim_map.get('diameter', 24.0))
+        params['small_end_diameter_mm'] = dim_map.get('inner_diameter', 12.0)
+        params['thickness_mm'] = dim_map.get('thickness', 12.0)
+
+    elif part_type == 'crankshaft':
+        # infer_missing_dimensions has no generic "count" extraction the
+        # way patterns.count does for hole patterns, so throw count comes
+        # straight off a number adjacent to "throw"/"cylinder" in the
+        # dim_map context if the regex extractor tagged it that way,
+        # else the template's own default (4) applies.
+        if 'throws' in dim_map or 'cylinders' in dim_map:
+            params['num_throws'] = int(dim_map.get('throws', dim_map.get('cylinders', 4)))
+        params['stroke_mm'] = dim_map.get('stroke', dim_map.get('length', 80.0))
+        params['main_journal_diameter_mm'] = dim_map.get('diameter', 50.0)
+
     elif part_type == 'freeform':
         params['profile_points'] = []
         params['path_points'] = []
@@ -472,7 +488,7 @@ def infer_missing_dimensions(part_type: str, dimensions: List[ExtractedDimension
         
     return params
 
-def extract_material(text: str) -> Optional[str]:
+def extract_material(text: str) -> str | None:
     """Extract material from text."""
     text_lower = text.lower()
     

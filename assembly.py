@@ -1,11 +1,17 @@
 """
 Assembly support for multi-part CAD generation.
 """
-import cadquery as cq
-from typing import Dict, Any, List
-from cad_templates import TEMPLATES
+from typing import Any
 
-def generate_assembly(parts_spec: List[Dict[str, Any]]) -> cq.Assembly:
+import cadquery as cq
+
+from cad_templates import TEMPLATES
+from logging_config import get_logger
+
+logger = get_logger(__name__)
+
+
+def generate_assembly(parts_spec: list[dict[str, Any]]) -> cq.Assembly:
     """
     Generate an assembly from multiple parts.
     
@@ -47,10 +53,47 @@ def generate_assembly(parts_spec: List[Dict[str, Any]]) -> cq.Assembly:
             )
             
             assy.add(workplane, name=name, loc=loc)
-    
+        else:
+            # Previously silent - a typo'd or unsupported part_type in an
+            # assembly spec just vanished from the output with no signal
+            # anywhere. Now at least logged, so a shrinking assembly is
+            # diagnosable instead of mysterious.
+            logger.warning(
+                "assembly part %r has unsupported part_type %r, skipping",
+                name, part_type,
+            )
+
     return assy
 
-def parse_assembly_description(description: str) -> List[Dict[str, Any]]:
+
+def get_assembly_parts(assy: cq.Assembly) -> list[tuple[str, cq.Shape]]:
+    """Flatten an Assembly into (name, shape) pairs for every leaf part,
+    with each part's geometry moved into its assembly-world location -
+    so a bracket that was built at the origin and placed at (0, 0, 5)
+    comes back already translated there.
+
+    This exists for the multi-part DXF/PDF export path in exporters.py:
+    export_all(compound, ...) on the merged compound gives one drawing
+    of the whole assembly, but a real fabrication drawing set needs each
+    sub-part's own front/top/side views, individually labeled - which
+    means walking the assembly tree rather than flattening straight to
+    one compound like STL/IGES/section-DXF already did.
+    """
+    parts: list[tuple[str, cq.Shape]] = []
+
+    def _walk(node: cq.Assembly, parent_loc: cq.Location) -> None:
+        world_loc = parent_loc * node.loc
+        if node.obj is not None:
+            shape = node.obj.val() if isinstance(node.obj, cq.Workplane) else node.obj
+            parts.append((node.name, shape.moved(world_loc)))
+        for child in node.children:
+            _walk(child, world_loc)
+
+    _walk(assy, cq.Location())
+    return parts
+
+
+def parse_assembly_description(description: str) -> list[dict[str, Any]]:
     """
     Parse assembly description into parts list.
     This is a simplified parser - in production, use LLM.

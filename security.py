@@ -8,17 +8,18 @@ sqlite3 here instead of SQLAlchemy, matching db.py's choice.
 
 from __future__ import annotations
 
-from typing import Optional
-
 from fastapi import Depends, HTTPException
 from fastapi.security.api_key import APIKeyHeader
 
 import db
+from logging_config import get_logger
+
+logger = get_logger(__name__)
 
 API_KEY_HEADER = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 
-def get_current_key(api_key: Optional[str] = Depends(API_KEY_HEADER)) -> dict:
+def get_current_key(api_key: str | None = Depends(API_KEY_HEADER)) -> dict:
     """FastAPI dependency - raises 401/403 on missing/invalid/inactive
     key, otherwise returns the key's row (user_id, usage_count, etc.)."""
     if not api_key:
@@ -30,6 +31,11 @@ def get_current_key(api_key: Optional[str] = Depends(API_KEY_HEADER)) -> dict:
 
     key_info = db.validate_api_key(api_key)
     if key_info is None:
+        # Deliberately not logging the attempted key, even hashed - no
+        # operational need to retain failed-auth key material, and it
+        # avoids ever having a raw key transiently appear in a log
+        # pipeline via a copy-paste-into-header mistake.
+        logger.warning("rejected request with invalid or inactive API key")
         raise HTTPException(status_code=401, detail="Invalid or deactivated API key")
 
     return key_info

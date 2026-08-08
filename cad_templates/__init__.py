@@ -12,6 +12,8 @@ from .piping import generate_pipe_fitting, generate_flange
 from .freeform import generate_freeform
 from .misc import generate_hinge, generate_cam
 from .hardware import generate_hex_standoff, generate_t_bracket, generate_channel_bracket
+from .connecting_rod import generate_connecting_rod
+from .crankshaft import generate_crankshaft
 
 TEMPLATES = {
     # Basic parts
@@ -52,4 +54,12 @@ TEMPLATES = {
     "hex_standoff": generate_hex_standoff,
     "t_bracket": generate_t_bracket,
     "channel_bracket": generate_channel_bracket,
+
+    # Engine components (connecting_rod.py / crankshaft.py) - the most
+    # geometrically complex templates in this project so far: multi-body
+    # boolean unions rather than a single extrude+cut. See each module's
+    # own docstring for the specific simplifications made (non-involute-
+    # style approximations, same spirit as generate_gear()'s teeth).
+    "connecting_rod": generate_connecting_rod,
+    "crankshaft": generate_crankshaft,
 }

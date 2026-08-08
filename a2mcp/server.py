@@ -42,18 +42,18 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import Any, Dict, Optional
+from typing import Any
 
 from fastmcp import FastMCP
 
-from cad_generator import CADGenerator
 from a2mcp.x402 import build_paid_app
+from cad_generator import CADGenerator
 
 mcp = FastMCP("NitoCAD")
 generator = CADGenerator()
 
 
-def _build_message(result: Dict[str, Any]) -> str:
+def _build_message(result: dict[str, Any]) -> str:
     """
     Plain-language "message" field, ported from mcp-gateway/server.js's
     buildMessage() so the new Python MCP tool gives an agent the same
@@ -76,7 +76,7 @@ def _build_message(result: Dict[str, Any]) -> str:
     return " ".join(parts)
 
 
-def _build_tool_response(result: Dict[str, Any]) -> Dict[str, Any]:
+def _build_tool_response(result: dict[str, Any]) -> dict[str, Any]:
     """Same field shape mcp-gateway/server.js's buildAgentResponse used, so
     any existing consumer built against that JSON shape keeps working."""
     params = result.get("parameters") or {}
@@ -97,10 +97,10 @@ def _build_tool_response(result: Dict[str, Any]) -> Dict[str, Any]:
 @mcp.tool
 async def generate_cad_part(
     description: str,
-    use_deepseek: Optional[bool] = None,
-    api_key: Optional[str] = None,
+    use_deepseek: bool | None = None,
+    api_key: str | None = None,
     model: str = "deepseek-v4-flash",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Convert a plain-English mechanical part description into a
     manufacturable .STEP CAD file (with .STL for preview), using
@@ -149,7 +149,7 @@ FREE_METHODS = {"initialize", "notifications/initialized", "ping"}
 FREE_TOOL_NAMES: set[str] = set()
 
 
-def _validate_tool_call(payload: Dict[str, Any]) -> Optional[str]:
+def _validate_tool_call(payload: dict[str, Any]) -> str | None:
     """
     Structural + required-argument validation for a tools/call payload,
     run in X402Gate BEFORE payment routing. OKX's A2MCP review rejected
@@ -196,7 +196,7 @@ def _validate_tool_call(payload: Dict[str, Any]) -> Optional[str]:
     return None
 
 
-def _is_free(body: bytes, headers: Dict[str, str]) -> bool:
+def _is_free(body: bytes, headers: dict[str, str]) -> bool:
     """
     Default-DENY: only explicit session-bootstrap plumbing (FREE_METHODS)
     or an in-session tools/list counts as free. Everything else, including

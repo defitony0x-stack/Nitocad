@@ -2,14 +2,16 @@
 LLM-based parameter extraction from natural language descriptions.
 """
 import json
-from typing import Dict, Any, Optional
+from typing import Any
+
 from pydantic import BaseModel, Field
+
 
 class ParsedParameters(BaseModel):
     """Structured parameters extracted from natural language."""
     part_type: str = Field(..., description="Type of part: motor_mount, l_bracket, flat_plate, simple_box")
-    parameters: Dict[str, Any] = Field(..., description="Part-specific parameters")
-    material: Optional[str] = Field(None, description="Material specification")
+    parameters: dict[str, Any] = Field(..., description="Part-specific parameters")
+    material: str | None = Field(None, description="Material specification")
     confidence: float = Field(0.0, description="Confidence score 0-1")
 
 SYSTEM_PROMPT = """You are a CAD parameter extraction system. Parse natural language descriptions of mechanical parts into structured JSON.

@@ -41,7 +41,6 @@ exactly this kind of defect detection. Every solid returned by a
 fillet/chamfer attempt is now checked with `.isValid()`, not just
 counted.
 """
-from typing import Optional
 
 
 def _is_valid_and_nonempty(workplane) -> bool:
@@ -62,8 +61,8 @@ def _is_valid_and_nonempty(workplane) -> bool:
         return False
 
 
-def safe_fillet(workplane, radius: float, edge_selector: Optional[str] = None,
-                 min_radius: float = 0.05, warnings: Optional[list] = None,
+def safe_fillet(workplane, radius: float, edge_selector: str | None = None,
+                 min_radius: float = 0.05, warnings: list | None = None,
                  label: str = "fillet"):
     """
     Attempt workplane.edges([edge_selector]).fillet(radius), retrying at
@@ -100,8 +99,8 @@ def safe_fillet(workplane, radius: float, edge_selector: Optional[str] = None,
     return workplane
 
 
-def safe_chamfer(workplane, size: float, edge_selector: Optional[str] = None,
-                  min_size: float = 0.05, warnings: Optional[list] = None,
+def safe_chamfer(workplane, size: float, edge_selector: str | None = None,
+                  min_size: float = 0.05, warnings: list | None = None,
                   label: str = "chamfer"):
     """Same retry-then-degrade behavior as safe_fillet, including the
     OCCT validity check, for chamfer()."""

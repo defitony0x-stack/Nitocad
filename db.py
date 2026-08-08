@@ -22,17 +22,24 @@ filesystem problem as generated CAD files - see the DB_PATH note below.
 from __future__ import annotations
 
 import json
-import os
 import sqlite3
 import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any
+
+from config import settings
+from logging_config import get_logger
+
+logger = get_logger(__name__)
 
 # On Railway, mount a persistent volume and point DB_PATH at it
 # (e.g. "/data/nl-to-cad.db"). Left as a bare filename by default for local
-# dev, where the working directory is stable between runs.
-DB_PATH = os.getenv("DB_PATH", "nl_to_cad.db")
+# dev, where the working directory is stable between runs. Resolved via
+# config.settings (not a bare os.getenv here) so it's overridable in tests
+# via config.get_settings.cache_clear() + monkeypatched env, and so every
+# module agrees on the same value - see config.py's module docstring.
+DB_PATH = settings.DB_PATH
 
 
 def _now() -> str:
@@ -89,6 +96,22 @@ def init_db() -> None:
         )
         conn.execute("CREATE INDEX IF NOT EXISTS idx_jobs_created_at ON jobs(created_at)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_jobs_user_id ON jobs(user_id)")
+        # api_keys.hashed_key already has an implicit index from its UNIQUE
+        # constraint - no separate CREATE INDEX needed for that lookup.
+    logger.info("database ready at %s", DB_PATH)
+
+
+def check_connection() -> bool:
+    """Used by the /healthz readiness check - a cheap round trip that
+    proves the sqlite file is reachable and not locked/corrupted, not
+    just that the path string is set."""
+    try:
+        with get_conn() as conn:
+            conn.execute("SELECT 1")
+        return True
+    except sqlite3.Error:
+        logger.exception("database health check failed")
+        return False
 
 
 # ---------------------------------------------------------------- jobs ----
@@ -98,15 +121,15 @@ def record_job(
     description: str,
     success: bool,
     user_id: str = "default",
-    part_type: Optional[str] = None,
-    parameters: Optional[dict] = None,
-    material: Optional[str] = None,
+    part_type: str | None = None,
+    parameters: dict | None = None,
+    material: str | None = None,
     used_deepseek: bool = False,
-    error: Optional[str] = None,
-    step_url: Optional[str] = None,
-    stl_url: Optional[str] = None,
-    warnings: Optional[list] = None,
-    corrections: Optional[dict] = None,
+    error: str | None = None,
+    step_url: str | None = None,
+    stl_url: str | None = None,
+    warnings: list | None = None,
+    corrections: dict | None = None,
 ) -> str:
     """Persist one generation job and return its id (a uuid4 string, also
     used as the on-disk/R2 filename stem - see storage.py)."""
@@ -140,7 +163,7 @@ def record_job(
     return job_id
 
 
-def get_job(job_id: str) -> Optional[dict[str, Any]]:
+def get_job(job_id: str) -> dict[str, Any] | None:
     with get_conn() as conn:
         row = conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
         return dict(row) if row else None
@@ -178,7 +201,7 @@ def create_api_key(user_id: str = "default") -> str:
     return raw_key
 
 
-def validate_api_key(raw_key: str) -> Optional[dict[str, Any]]:
+def validate_api_key(raw_key: str) -> dict[str, Any] | None:
     """Returns the key row (as a dict) if valid and active, else None.
     Bumps usage_count/last_used_at on success."""
     import hashlib

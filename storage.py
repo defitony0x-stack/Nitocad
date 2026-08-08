@@ -15,9 +15,13 @@ credentials, not something to rely on in production.
 
 from __future__ import annotations
 
-import os
 import uuid
-from typing import Optional
+
+from config import settings
+from exceptions import StorageError
+from logging_config import get_logger
+
+logger = get_logger(__name__)
 
 _client = None
 
@@ -29,12 +33,12 @@ def _get_client():
     if _client is not None:
         return _client
 
-    account_id = os.getenv("R2_ACCOUNT_ID")
-    access_key = os.getenv("R2_ACCESS_KEY_ID")
-    secret_key = os.getenv("R2_SECRET_ACCESS_KEY")
-
-    if not (account_id and access_key and secret_key):
+    if not settings.r2_configured:
         return None
+
+    account_id = settings.R2_ACCOUNT_ID
+    access_key = settings.R2_ACCESS_KEY_ID
+    secret_key = settings.R2_SECRET_ACCESS_KEY
 
     import boto3
     from botocore.config import Config
@@ -63,7 +67,7 @@ def is_configured() -> bool:
     return _get_client() is not None
 
 
-def upload_file(local_path: str, key_prefix: str, content_type: str) -> Optional[str]:
+def upload_file(local_path: str, key_prefix: str, content_type: str) -> str | None:
     """
     Uploads a local file to R2 under key_prefix/ and returns a URL for it,
     or None if R2 isn't configured. The object key uses a fresh uuid, not
@@ -75,38 +79,63 @@ def upload_file(local_path: str, key_prefix: str, content_type: str) -> Optional
     if client is None:
         return None
 
-    bucket = os.getenv("R2_BUCKET_NAME")
+    bucket = settings.R2_BUCKET_NAME
     if not bucket:
-        raise RuntimeError(
+        raise StorageError(
             "R2 credentials are set but R2_BUCKET_NAME is missing. "
             "Set R2_BUCKET_NAME in your environment."
         )
 
-    ext = os.path.splitext(local_path)[1]
+    import os as _os
+    ext = _os.path.splitext(local_path)[1]
     object_key = f"{key_prefix}/{uuid.uuid4().hex}{ext}"
 
-    client.upload_file(
-        local_path,
-        bucket,
-        object_key,
-        ExtraArgs={"ContentType": content_type},
-    )
+    try:
+        client.upload_file(
+            local_path,
+            bucket,
+            object_key,
+            ExtraArgs={"ContentType": content_type},
+        )
+    except Exception as exc:  # noqa: BLE001 - boto3 raises many exception types
+        raise StorageError(f"R2 upload failed: {exc}") from exc
 
-    public_base = os.getenv("R2_PUBLIC_URL")
-    if public_base:
-        return f"{public_base.rstrip('/')}/{object_key}"
+    logger.info("uploaded %s to R2 as %s", local_path, object_key)
 
-    expiry = int(os.getenv("R2_PRESIGNED_EXPIRY_SECONDS", str(7 * 24 * 3600)))
+    if settings.R2_PUBLIC_URL:
+        return f"{settings.R2_PUBLIC_URL.rstrip('/')}/{object_key}"
+
     return client.generate_presigned_url(
         "get_object",
         Params={"Bucket": bucket, "Key": object_key},
-        ExpiresIn=expiry,
+        ExpiresIn=settings.R2_PRESIGNED_EXPIRY_SECONDS,
     )
 
 
-def upload_step(local_path: str, key_prefix: str = "step") -> Optional[str]:
+def upload_step(local_path: str, key_prefix: str = "step") -> str | None:
     return upload_file(local_path, key_prefix, "application/step")
 
 
-def upload_stl(local_path: str, key_prefix: str = "stl") -> Optional[str]:
+def upload_stl(local_path: str, key_prefix: str = "stl") -> str | None:
     return upload_file(local_path, key_prefix, "model/stl")
+
+
+# Content types for every exporters.SUPPORTED_FORMATS entry, keyed the
+# same way cad_generator.py names them. IGES and DXF don't have
+# universally standardized MIME types the way STEP/STL do in practice -
+# these are the ones IANA/common CAD tooling actually uses.
+_CONTENT_TYPES = {
+    "step": "application/step",
+    "stl": "model/stl",
+    "iges": "model/iges",
+    "dxf": "image/vnd.dxf",
+    "pdf": "application/pdf",
+}
+
+
+def upload_export(local_path: str, fmt: str) -> str | None:
+    """Generic upload for any exporters.SUPPORTED_FORMATS format - added
+    alongside upload_step/upload_stl (kept as-is for any existing caller)
+    rather than replacing them, so this is purely additive."""
+    content_type = _CONTENT_TYPES.get(fmt, "application/octet-stream")
+    return upload_file(local_path, fmt, content_type)
