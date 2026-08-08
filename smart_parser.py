@@ -120,13 +120,24 @@ def extract_all_dimensions(text: str) -> list[ExtractedDimension]:
         (r'(thick(?:ness)?)\s*(?:of|is|=|:)?\s*(\d+(?:\.\d+)?)', 'thickness'),
         (r'(diameter|dia|diam)\s*(?:of|is|=|:)?\s*(\d+(?:\.\d+)?)', 'diameter'),
         (r'(radius|r)\s*(?:of|is|=|:)?\s*(\d+(?:\.\d+)?)', 'radius'),
+        (r'(module)\s*(?:of|is|=|:)?\s*(\d+(?:\.\d+)?)', 'module'),
+        (r'(teeth|tooth\s*count)\s*(?:of|is|=|:)?\s*(\d+(?:\.\d+)?)', 'teeth'),
+        (r'(bore)\s*(?:diameter\s*)?(?:of|is|=|:)?\s*(\d+(?:\.\d+)?)', 'bore'),
+        (r'(throws|num\s*throws)\s*(?:of|is|=|:)?\s*(\d+(?:\.\d+)?)', 'throws'),
+        (r'(cylinders?)\s*(?:of|is|=|:)?\s*(\d+(?:\.\d+)?)', 'cylinders'),
+        (r'(stroke)\s*(?:of|is|=|:)?\s*(\d+(?:\.\d+)?)', 'stroke'),
         (r'(\d+(?:\.\d+)?)\s*(?:mm\s*)?(?:thick|thickness)', 'thickness'),
         (r'(\d+(?:\.\d+)?)\s*(?:mm\s*)?(?:wide|width)', 'width'),
         (r'(\d+(?:\.\d+)?)\s*(?:mm\s*)?(?:tall|height)', 'height'),
         (r'(\d+(?:\.\d+)?)\s*(?:mm\s*)?(?:deep|depth)', 'depth'),
         (r'(\d+(?:\.\d+)?)\s*(?:mm\s*)?(?:long|length)', 'length'),
-        (r'(\d+(?:\.\d+)?)\s*(?:mm\s*)?(?:hole\s*)?(?:diameter|dia)', 'diameter'),
+        (r'(\d+(?:\.\d+)?)\s*(?:mm\s*)?(?:\w+\s+){0,2}(?:diameter|dia)', 'diameter'),
         (r'(\d+(?:\.\d+)?)\s*(?:mm\s*)?radius', 'radius'),
+        (r'(\d+(?:\.\d+)?)\s*teeth', 'teeth'),
+        (r'(\d+(?:\.\d+)?)\s*(?:mm\s*)?bore(?:\s*diameter)?', 'bore'),
+        (r'(\d+(?:\.\d+)?)\s*throws?', 'throws'),
+        (r'(\d+(?:\.\d+)?)\s*-?\s*cylinders?', 'cylinders'),
+        (r'(\d+(?:\.\d+)?)\s*(?:mm\s*)?stroke', 'stroke'),
     ]
     
     for pattern, context in context_patterns:
@@ -300,7 +311,9 @@ def infer_part_type(text: str, dimensions: list[ExtractedDimension], operations:
         return 'l_bracket'
     elif any(word in text_lower for word in ['shaft', 'axle', 'rod', 'pin']):
         return 'shaft'
-    elif any(word in text_lower for word in ['gear', 'sprocket']):
+    elif any(word in text_lower for word in ['sprocket', 'chain sprocket']):
+        return 'sprocket'
+    elif any(word in text_lower for word in ['gear']):
         return 'gear'
     elif any(word in text_lower for word in ['pulley', 'belt']):
         return 'pulley'
@@ -417,6 +430,12 @@ def infer_missing_dimensions(part_type: str, dimensions: list[ExtractedDimension
         params['thickness_mm'] = dim_map.get('thickness', 10.0)
         params['bore_diameter_mm'] = dim_map.get('bore', 5.0)
         
+    elif part_type == 'sprocket':
+        params['teeth'] = int(dim_map.get('teeth', 18))
+        params['chain_pitch_mm'] = dim_map.get('pitch', 12.7)
+        params['thickness_mm'] = dim_map.get('thickness', 8.0)
+        params['bore_diameter_mm'] = dim_map.get('bore', 8.0)
+        
     elif part_type == 'pulley':
         params['outer_diameter_mm'] = dim_map.get('diameter', 40.0)
         params['belt_width_mm'] = dim_map.get('width', 10.0)
@@ -488,23 +507,26 @@ def infer_missing_dimensions(part_type: str, dimensions: list[ExtractedDimension
         params['thickness_mm'] = dim_map.get('thickness', 12.0)
 
     elif part_type == 'crankshaft':
-        # infer_missing_dimensions has no generic "count" extraction the
-        # way patterns.count does for hole patterns, so throw count comes
-        # straight off a number adjacent to "throw"/"cylinder" in the
-        # dim_map context if the regex extractor tagged it that way,
-        # else the template's own default (4) applies.
         if 'throws' in dim_map or 'cylinders' in dim_map:
             params['num_throws'] = int(dim_map.get('throws', dim_map.get('cylinders', 4)))
         params['stroke_mm'] = dim_map.get('stroke', dim_map.get('length', 80.0))
         params['main_journal_diameter_mm'] = dim_map.get('diameter', 50.0)
 
     elif part_type == 'freeform':
-        params['profile_points'] = []
-        params['path_points'] = []
-        op_types = {op.get('type') for op in operations}
-        params['sweep'] = 'sweep' in op_types
-        params['loft'] = 'loft' in op_types
-        params['revolve'] = 'revolve' in op_types
+        # Two bugs found via live testing, not just one:
+        # (1) profile_points was set to an explicit [] here, which defeats
+        #     the template's own `params.get('profile_points', [default])`
+        #     fallback - a present-but-empty key is not a missing key, so
+        #     the template crashed on profile_points[0] instead of using
+        #     its default shape. Omitting the key when we have nothing
+        #     real to put there lets that fallback actually work.
+        # (2) generate_freeform() dispatches on params['operation'], not
+        #     on separate sweep/loft/revolve booleans - setting those
+        #     booleans (as this branch previously did) was dead code that
+        #     nothing downstream reads. The real dispatch key was never
+        #     set at all, so it silently always defaulted to 'revolve'.
+        op_types = [op.get('type') for op in operations if op.get('type') in ('sweep', 'loft', 'revolve')]
+        params['operation'] = op_types[0] if op_types else 'revolve'
         
     return params
 
