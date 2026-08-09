@@ -8,7 +8,7 @@ pydantic-settings==2.6.1   # config.py - typed env var loading, replaces scatter
 python-multipart==0.0.9
 jinja2==3.1.2
 numpy>=1.26.4,<2.0
-openai==1.35.13   # DeepSeek client (deepseek_parser.py) - OpenAI-compatible API via base_url override
+openai>=1.55.3   # DeepSeek client (deepseek_parser.py) - OpenAI-compatible API via base_url override. Was pinned to 1.35.13, which hardcodes a `proxies=` kwarg incompatible with httpx>=0.28 (pinned below) - fixed upstream in 1.55.3, see https://github.com/openai/openai-python/issues/1902
 boto3>=1.34.0   # R2 (S3-compatible) storage - see storage.py, optional at runtime
 slowapi==0.1.9   # per-IP rate limiting on /generate and /api/keys/generate - see web_app.py
 
