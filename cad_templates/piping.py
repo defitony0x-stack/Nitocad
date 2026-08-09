@@ -55,14 +55,29 @@ def generate_pipe_fitting(params: dict) -> cq.Workplane:
             .extrude(length / 2)
         )
         
+        # pipe2 must attach at wherever the torus's *far* end face actually
+        # ends up after revolve(angle, ...). The old construction built it
+        # on the "XZ" plane and rotated by a hardcoded -90deg about X, which
+        # lands at (0, bend_radius, 0) with its axis along Z - nowhere near
+        # the torus's real end cap at (bend_radius*cos(angle), 0,
+        # -bend_radius*sin(angle)) with axis along the arc's tangent
+        # direction. That's not a coincidence/tolerance issue, it's a wrong
+        # placement, and it also ignored the `angle` param entirely.
+        #
+        # Fix: build pipe2 identically to pipe1 (same profile, same start
+        # plane/orientation), then apply the *same* rotation revolve() uses
+        # to sweep the torus profile from 0 to `angle` about the Y axis.
+        # That guarantees pipe2's start face exactly coincides with the
+        # torus's end face for any angle/bend_radius, since it's the same
+        # rigid transform revolve() applies internally.
         pipe2 = (
-            cq.Workplane("XZ")
-            .center(0, bend_radius)
+            cq.Workplane("XY")
+            .center(bend_radius, 0)
             .circle(outer / 2)
             .circle(inner / 2)
             .extrude(length / 2)
+            .rotate((0, 0, 0), (0, 1, 0), angle)
         )
-        pipe2 = pipe2.rotate((0, 0, 0), (1, 0, 0), -90)
         
         # Create torus section for the bend
         torus = (
