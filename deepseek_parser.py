@@ -52,6 +52,9 @@ Choose exactly one part_type from this list, and extract only the parameters rel
 - hex_standoff: across_flats_mm, inner_diameter_mm, length_mm
 - t_bracket: length_mm, cap_width_mm, stem_height_mm, thickness_mm, hole_count, hole_diameter_mm, fillet_radius_mm
 - channel_bracket: length_mm, width_mm, height_mm, wall_thickness_mm, mount_hole_count, mount_hole_diameter_mm
+- connecting_rod: center_distance_mm, big_end_diameter_mm, small_end_diameter_mm, thickness_mm
+- crankshaft: num_throws, stroke_mm, main_journal_diameter_mm, main_journal_length_mm, rod_journal_diameter_mm, rod_journal_length_mm, web_thickness_mm, nose_diameter_mm, nose_length_mm, flange_diameter_mm, flange_length_mm
+- freeform: for anything irregular/organic/custom-profile that doesn't match a template above. operation ("revolve"|"sweep"|"loft"), profile_points (list of [x,y] mm pairs tracing the 2D cross-section/profile in order - this is the actual shape, extract it as precisely as the description allows), revolve_axis ("X"|"Y", for revolve), revolve_angle_deg (default 360, for revolve), path_points (list of [x,y,z] mm points, for sweep)
 
 If the description doesn't clearly match any of these, set part_type to "unknown" and confidence to 0.0.
 If a parameter isn't mentioned, omit it (the template applies its own default), don't guess a specific value for something the description didn't say.

@@ -53,7 +53,7 @@ class CADGenerator:
         description: str,
         use_deepseek: bool | None = None,
         api_key: str | None = None,
-        model: str = "deepseek-v4-flash",
+        model: str | None = None,
         user_id: str = "default",
         formats: list[str] | None = None,
     ) -> dict[str, Any]:
@@ -88,6 +88,7 @@ class CADGenerator:
         # has a value, even in the unlikely case parsing itself throws
         # before the resolution logic runs.
         resolved_key = api_key or settings.DEEPSEEK_API_KEY
+        resolved_model = model or settings.DEEPSEEK_DEFAULT_MODEL
         used_deepseek = bool(resolved_key) and use_deepseek is not False
 
         try:
@@ -106,7 +107,7 @@ class CADGenerator:
 
             with log_duration(logger, "parse", part_type=None):
                 params = deepseek_parse_description(
-                    description, use_deepseek=use_deepseek, api_key=api_key, model=model
+                    description, use_deepseek=use_deepseek, api_key=api_key, model=resolved_model
                 )
 
             # Mirrors deepseek_parser.parse_description's own resolution
