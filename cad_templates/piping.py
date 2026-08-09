@@ -47,12 +47,23 @@ def generate_pipe_fitting(params: dict) -> cq.Workplane:
         # tol= on union() enables OCCT's fuzzy boolean mode, which
         # treats near/exactly-coincident faces as intersecting instead
         # of failing on them.
+        # Even with tol= fuzzy booleans, OCCT's BRepAlgoAPI_Fuse can still
+        # reject exactly-coincident faces in some versions/topologies,
+        # especially chained union().union() calls on hollow (annular)
+        # sections where both the outer AND inner radius edges coincide at
+        # once. The more robust fix on top of the placement fix above:
+        # don't just touch the torus's end faces, genuinely overlap into
+        # them by a small epsilon, so the boolean has real 3D intersection
+        # to work with instead of a degenerate shared-surface case.
+        overlap = max(0.1, bend_radius * 0.005)
+
         pipe1 = (
             cq.Workplane("XY")
             .center(bend_radius, 0)
             .circle(outer / 2)
             .circle(inner / 2)
             .extrude(length / 2)
+            .translate((0, 0, -overlap))
         )
         
         # pipe2 must attach at wherever the torus's *far* end face actually
@@ -65,17 +76,19 @@ def generate_pipe_fitting(params: dict) -> cq.Workplane:
         # placement, and it also ignored the `angle` param entirely.
         #
         # Fix: build pipe2 identically to pipe1 (same profile, same start
-        # plane/orientation), then apply the *same* rotation revolve() uses
-        # to sweep the torus profile from 0 to `angle` about the Y axis.
-        # That guarantees pipe2's start face exactly coincides with the
-        # torus's end face for any angle/bend_radius, since it's the same
-        # rigid transform revolve() applies internally.
+        # plane/orientation, same overlap nudge), then apply the *same*
+        # rotation revolve() uses to sweep the torus profile from 0 to
+        # `angle` about the Y axis. That guarantees pipe2's start face sits
+        # exactly on (and now, thanks to the overlap nudge, slightly past)
+        # the torus's end face for any angle/bend_radius, since it's the
+        # same rigid transform revolve() applies internally.
         pipe2 = (
             cq.Workplane("XY")
             .center(bend_radius, 0)
             .circle(outer / 2)
             .circle(inner / 2)
             .extrude(length / 2)
+            .translate((0, 0, -overlap))
             .rotate((0, 0, 0), (0, 1, 0), angle)
         )
         
