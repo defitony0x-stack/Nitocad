@@ -38,6 +38,7 @@ def generate_pipe_fitting(params: dict) -> cq.Workplane:
         # Simplified: create two pipes and join with a torus section
         pipe1 = (
             cq.Workplane("XY")
+            .center(bend_radius, 0)
             .circle(outer / 2)
             .circle(inner / 2)
             .extrude(length / 2)
