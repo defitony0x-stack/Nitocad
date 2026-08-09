@@ -35,7 +35,18 @@ def generate_pipe_fitting(params: dict) -> cq.Workplane:
         bend_radius = params.get('bend_radius_mm', outer * 2)
         
         # Create elbow by sweeping a ring profile along an arc
-        # Simplified: create two pipes and join with a torus section
+        # Simplified: create two pipes and join with a torus section.
+        # pipe1/pipe2 are positioned to sit exactly flush against the
+        # torus's start/end faces (matching bend_radius), which is
+        # correct geometrically but leaves the solids only *touching*
+        # rather than volumetrically overlapping - OCCT's boolean fuse
+        # (BRepAlgoAPI_Fuse) is known to fail on that exact-coincidence
+        # case with "BRep_API: command not done" (see
+        # https://github.com/CadQuery/cadquery/issues/849 and
+        # https://dev.opencascade.org/content/fuzzy-boolean-operations).
+        # tol= on union() enables OCCT's fuzzy boolean mode, which
+        # treats near/exactly-coincident faces as intersecting instead
+        # of failing on them.
         pipe1 = (
             cq.Workplane("XY")
             .center(bend_radius, 0)
@@ -62,7 +73,7 @@ def generate_pipe_fitting(params: dict) -> cq.Workplane:
             .revolve(angle, (0, 0, 0), (0, 1, 0))
         )
         
-        result = pipe1.union(torus).union(pipe2)
+        result = pipe1.union(torus, tol=0.01).union(pipe2, tol=0.01)
     
     elif fitting_type == 'tee':
         # Main pipe
@@ -82,7 +93,7 @@ def generate_pipe_fitting(params: dict) -> cq.Workplane:
             .extrude(length / 2)
         )
         
-        result = main.union(branch)
+        result = main.union(branch, tol=0.01)
     
     else:
         # Default to simple pipe
