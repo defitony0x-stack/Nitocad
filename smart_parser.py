@@ -598,6 +598,16 @@ def parse_description(description: str, use_claude: bool = False, api_key: str =
             if not (op.get('type') == 'fillet' and op.get('radius') == consumed_fillet_radius)
         ]
     
+    # Same double-application problem for freeform parts: infer_missing_dimensions
+    # already consumed the sweep/loft/revolve entry into parameters['operation']
+    # to pick which generator function to call. Leaving it in `operations` too
+    # makes apply_operations() try to treat it as a post-build op it doesn't
+    # recognize (it only knows fillet/chamfer/shell), logging a harmless but
+    # noisy "unknown operation type 'revolve' ignored" warning downstream.
+    consumed_operation = parameters.get('operation')
+    if consumed_operation is not None:
+        operations = [op for op in operations if op.get('type') != consumed_operation]
+    
     # Add operations to parameters
     if operations:
         parameters['operations'] = operations
