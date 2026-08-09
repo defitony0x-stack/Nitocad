@@ -23,7 +23,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -58,10 +58,22 @@ class Settings(BaseSettings):
     RATE_LIMIT_KEY_ISSUE: str = "5/hour"
 
     # --- DeepSeek parser ------------------------------------------------
+    # Railway's actual service variables are named LLM_API_KEY/LLM_BASE_URL/
+    # LLM_MODEL, not DEEPSEEK_*, leftover from an earlier provider-agnostic
+    # naming convention (predates this file's DEEPSEEK_* names, which the
+    # module docstring above claims are the "existing" names - they weren't,
+    # in this deployment). Since case_sensitive=True and there's no fuzzy
+    # matching, DEEPSEEK_API_KEY silently resolved to None the whole time,
+    # no error, no warning, just a permanent silent fallback to the regex
+    # parser. Accept both naming conventions instead of picking one and
+    # requiring a Railway dashboard rename.
     DEEPSEEK_API_KEY: str | None = None
     DEEPSEEK_BASE_URL: str = "https://api.deepseek.com"
     DEEPSEEK_DEFAULT_MODEL: str = "deepseek-v4-flash"
     DEEPSEEK_TIMEOUT_SECONDS: float = 20.0
+    LLM_API_KEY: str | None = None
+    LLM_BASE_URL: str | None = None
+    LLM_MODEL: str | None = None
 
     # --- Cloudflare R2 storage (optional; falls back to local disk) ----
     R2_ACCOUNT_ID: str | None = None
@@ -85,6 +97,19 @@ class Settings(BaseSettings):
         if v not in valid:
             raise ValueError(f"LOG_LEVEL must be one of {valid}, got {v!r}")
         return v
+
+    @model_validator(mode="after")
+    def _fall_back_to_llm_env_names(self) -> "Settings":
+        """DEEPSEEK_API_KEY takes priority if both are set. LLM_* is the
+        fallback for deployments (like Railway here) that only defined the
+        provider-agnostic names."""
+        if self.DEEPSEEK_API_KEY is None and self.LLM_API_KEY is not None:
+            self.DEEPSEEK_API_KEY = self.LLM_API_KEY
+        if self.LLM_BASE_URL is not None:
+            self.DEEPSEEK_BASE_URL = self.LLM_BASE_URL
+        if self.LLM_MODEL is not None:
+            self.DEEPSEEK_DEFAULT_MODEL = self.LLM_MODEL
+        return self
 
     @property
     def cors_origins_list(self) -> list[str]:
