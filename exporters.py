@@ -675,9 +675,26 @@ def export_dxf(
 # reportlab, at true 1:1 scale with a title block.
 # --------------------------------------------------------------------
 
+_VISIBLE_LINE_WIDTH_MM = 0.35
+_HIDDEN_LINE_WIDTH_MM = 0.2
+_DIM_LINE_WIDTH_MM = 0.15
+
+
 def _draw_open_polyline_pdf(c, points: list[tuple[float, float]], dashed: bool = False) -> None:
     if len(points) < 2:
         return
+    # Sets its own line width explicitly every call rather than trusting
+    # whatever the canvas was last left at - it used to rely on a single
+    # c.setLineWidth(0.5) set once before the whole multi-view loop, but
+    # _add_dimensions_pdf (called after every view, in that same loop)
+    # sets its own thinner dimension-line width and never restores it, so
+    # every view after the first silently inherited the wrong (dimension)
+    # width instead of the visible/hidden width it was supposed to have.
+    # The 0.35/0.2mm values themselves also replace the old raw 0.5/0.3
+    # *points* (~0.18mm/0.11mm) - too thin to read as a normal-weight
+    # line at 1:1 print scale, which is the "light ink" look this fixes.
+    from reportlab.lib.units import mm
+    c.setLineWidth((_HIDDEN_LINE_WIDTH_MM if dashed else _VISIBLE_LINE_WIDTH_MM) * mm)
     c.setDash([2, 2] if dashed else [])
     p = c.beginPath()
     p.moveTo(*points[0])
@@ -713,7 +730,8 @@ def _draw_horizontal_dim_pdf(c, to_page, x0: float, x1: float, y_measured: float
     p1 = to_page((x1, y_measured))
     d0 = to_page((x0, y_dim))
     d1 = to_page((x1, y_dim))
-    c.setLineWidth(0.3)
+    from reportlab.lib.units import mm
+    c.setLineWidth(_DIM_LINE_WIDTH_MM * mm)
     c.line(p0[0], p0[1], d0[0], d0[1] + (6 if y_dim > y_measured else -6))
     c.line(p1[0], p1[1], d1[0], d1[1] + (6 if y_dim > y_measured else -6))
     c.line(d0[0], d0[1], d1[0], d1[1])
@@ -729,7 +747,8 @@ def _draw_vertical_dim_pdf(c, to_page, y0: float, y1: float, x_measured: float, 
     p1 = to_page((x_measured, y1))
     d0 = to_page((x_dim, y0))
     d1 = to_page((x_dim, y1))
-    c.setLineWidth(0.3)
+    from reportlab.lib.units import mm
+    c.setLineWidth(_DIM_LINE_WIDTH_MM * mm)
     c.line(p0[0], p0[1], d0[0] + (6 if x_dim > x_measured else -6), d0[1])
     c.line(p1[0], p1[1], d1[0] + (6 if x_dim > x_measured else -6), d1[1])
     c.line(d0[0], d0[1], d1[0], d1[1])
@@ -752,7 +771,8 @@ def _draw_diameter_leader_pdf(c, to_page, cx: float, cy: float, r: float, text: 
     label_local = (cx + (r + 8) * math.cos(math.radians(45)), cy + (r + 8) * math.sin(math.radians(45)))
     edge_pt = to_page(edge_local)
     label_pt = to_page(label_local)
-    c.setLineWidth(0.3)
+    from reportlab.lib.units import mm
+    c.setLineWidth(_DIM_LINE_WIDTH_MM * mm)
     c.line(edge_pt[0], edge_pt[1], label_pt[0], label_pt[1])
     c.setFont("Helvetica", 7)
     c.drawString(label_pt[0] + 2, label_pt[1] - 2, text)
@@ -843,7 +863,11 @@ def export_pdf(
     def to_page(pt: tuple[float, float]) -> tuple[float, float]:
         return (origin_x + pt[0] * mm, origin_y + pt[1] * mm)
 
-    c.setLineWidth(0.5)
+    # No longer load-bearing - _draw_open_polyline_pdf now sets its own
+    # width on every call - but kept as the sane default for the title
+    # block's own border/divider lines drawn further down, which don't
+    # go through that helper.
+    c.setLineWidth(_VISIBLE_LINE_WIDTH_MM * mm)
     c.setStrokeColorRGB(0, 0, 0)
 
     for (label, block_views, _, y_shift), offsets in zip(blocks, all_offsets):
