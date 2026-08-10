@@ -325,12 +325,19 @@ def _build_three_views(workplane: "cq.Workplane") -> list[_View]:
     return [_build_view(shape, name) for name in ("front", "top", "side")]
 
 
-def _layout_three_views(views: list[_View], gap: float = 15.0) -> dict[str, tuple[float, float]]:
+def _layout_three_views(views: list[_View], gap: float = 28.0) -> dict[str, tuple[float, float]]:
     """Return {view_name: (offset_x, offset_y)} to add to each view's raw
     local coordinates so front/top/side sit in the standard third-angle
     drafting arrangement: top view above the front view (shared X
     registration), right-side view beside the front view (shared Z
-    registration), `gap` drawing units (mm) apart."""
+    registration), `gap` drawing units (mm) apart. Default bumped from
+    the original 15mm to 28mm when dimensioning was added - each view
+    now draws an overall-width dimension below it and an overall-height
+    dimension to its left (_add_dimensions_dxf/_add_dimensions_pdf), and
+    15mm wasn't reliably enough room for a dimension line + arrows +
+    text to fit in the gap without touching the neighboring view.
+    Estimated, not pixel-verified against a rendered drawing - see the
+    module docstring's standing no-cadquery-install caveat."""
     by_name = {v.name: v for v in views}
     front, top, side = by_name["front"], by_name["top"], by_name["side"]
 
@@ -346,17 +353,105 @@ def _layout_three_views(views: list[_View], gap: float = 15.0) -> dict[str, tupl
 
 
 def _combined_bbox(
-    views: list[_View], offsets: dict[str, tuple[float, float]], label_clearance: float = 6.0
+    views: list[_View],
+    offsets: dict[str, tuple[float, float]],
+    label_clearance: float = 6.0,
+    left_clearance: float = 0.0,
 ) -> tuple[float, float, float, float]:
     """(min_x, max_x, min_y, max_y) across every view's geometry once
-    placed, including room below each view for its label text."""
+    placed, including room below each view for its label text and, when
+    `label_clearance`/`left_clearance` are widened by the caller, the
+    width/height DIMENSION lines that _add_dimensions_dxf/
+    _add_dimensions_pdf draw below and to the left of each view - if
+    this box doesn't account for that space, the title block (placed
+    just below the returned box) ends up overlapping the dimension
+    lines instead of sitting cleanly below everything, same failure
+    mode as the "dimension leaders cut through the title block" defect
+    flagged in the export QA pass this fix comes from."""
     xs: list[float] = []
     ys: list[float] = []
     for v in views:
         ox, oy = offsets[v.name]
-        xs += [v.u_min + ox, v.u_max + ox]
+        xs += [v.u_min + ox - left_clearance, v.u_max + ox]
         ys += [v.v_min + oy - label_clearance, v.v_max + oy]
     return min(xs), max(xs), min(ys), max(ys)
+
+
+def _part_size_mm(views: list["_View"]) -> tuple[float, float, float]:
+    """Real (X, Y, Z) size of the actual solid, derived from the HLR
+    views themselves - NOT from any input parameter (plate_size,
+    motor_size_mm, etc). Those describe what was *requested*; a
+    template can auto-correct or reinterpret a parameter (e.g. the
+    fillet-radius auto-correction, or motor_mount snapping motor_size_mm
+    to the nearest NEMA face size) so what actually got built can differ
+    from what was asked for. Reading the size back off the projected
+    geometry is the only way the reported size can't silently diverge
+    from the part - same principle as why the drawing itself is HLR-
+    derived instead of hand-computed from parameters.
+
+    front's local-X = world +X and local-Y(vertical) = world +Z; side's
+    local-X = world +/-Y (see _VIEW_AXES) - so front.width is the X
+    extent, side.width is the Y extent, and front.height (== side.height,
+    barring a non-rectangular silhouette) is the Z extent.
+    """
+    by_name = {v.name: v for v in views}
+    front, side = by_name["front"], by_name["side"]
+    return (front.width, side.width, front.height)
+
+
+def _detect_circles(view: "_View", tolerance_frac: float = 0.02) -> list[tuple[float, float, float]]:
+    """Find hole-like closed loops in `view.visible` and measure their
+    real radius from the actual projected points - NOT from
+    hole_diameter_mm or any other input parameter. A polyline qualifies
+    as a circle if it's closed and every point sits within
+    `tolerance_frac` of the mean centroid-to-point distance (a true
+    circle's points are all equidistant from its center; anything else -
+    a rounded-corner outline, a slot - fails this check and is correctly
+    left undimensioned rather than mislabeled as a hole).
+
+    Returns a list of (center_x, center_y, radius) tuples, one per
+    detected circular loop, in the view's local drawing coordinates
+    (same frame as view.u_min/u_max/visible/hidden - caller must add the
+    view's layout offset before drawing).
+    """
+    circles: list[tuple[float, float, float]] = []
+    for line in view.visible:
+        if len(line) < 8:
+            continue
+        x0, y0 = line[0]
+        x1, y1 = line[-1]
+        if abs(x0 - x1) > 1e-3 or abs(y0 - y1) > 1e-3:
+            continue  # not closed
+        pts = line[:-1]  # drop the duplicated closing point
+        cx = sum(p[0] for p in pts) / len(pts)
+        cy = sum(p[1] for p in pts) / len(pts)
+        radii = [((p[0] - cx) ** 2 + (p[1] - cy) ** 2) ** 0.5 for p in pts]
+        r_mean = sum(radii) / len(radii)
+        if r_mean < 1e-6:
+            continue
+        max_dev = max(abs(r - r_mean) for r in radii)
+        if max_dev / r_mean <= tolerance_frac:
+            circles.append((cx, cy, r_mean))
+    return circles
+
+
+def _distinct_hole_callouts(circles: list[tuple[float, float, float]], group_tol: float = 0.05) -> list[tuple[float, float, float]]:
+    """Collapse detected circles into one representative circle per
+    distinct real diameter (grouped within `group_tol` mm of radius), so
+    a plate with 4 identical corner holes gets one callout, not four -
+    matching normal drafting convention of dimensioning one instance of
+    a repeated feature."""
+    groups: list[list[tuple[float, float, float]]] = []
+    for c in sorted(circles, key=lambda c: c[2]):
+        placed = False
+        for g in groups:
+            if abs(g[0][2] - c[2]) <= group_tol:
+                g.append(c)
+                placed = True
+                break
+        if not placed:
+            groups.append([c])
+    return [g[0] for g in groups]
 
 
 def _build_part_block(obj: "ShapeLike") -> tuple[list[_View], dict[str, tuple[float, float]]]:
@@ -396,6 +491,7 @@ def _dxf_layers(doc) -> None:
     doc.layers.add("HIDDEN", color=8, linetype="DASHED" if "DASHED" in doc.linetypes else "CONTINUOUS")
     doc.layers.add("LABELS", color=7)
     doc.layers.add("BORDER", color=7)
+    doc.layers.add("DIMENSIONS", color=1)
 
 
 def _draw_view_dxf(msp, view: _View, offset: tuple[float, float]) -> None:
@@ -413,16 +509,59 @@ def _draw_view_dxf(msp, view: _View, offset: tuple[float, float]) -> None:
     msp.add_text(view.label, dxfattribs={"layer": "LABELS", "height": 3.0}).set_placement((label_x, label_y))
 
 
+def _add_dimensions_dxf(msp, view: _View, offset: tuple[float, float]) -> None:
+    """Real DXF DIMENSION entities (associative dimension blocks that any
+    CAD package recognizes as dimensions, not just lines+text pretending
+    to be one) for one view's overall width/height and any detected
+    holes. Every value is read back from the view's actual HLR geometry
+    - see _part_size_mm / _detect_circles's docstrings for why that's
+    required rather than optional here."""
+    ox, oy = offset
+    override = {"dimtxt": 2.5, "dimasz": 2.0, "dimexe": 1.5, "dimexo": 1.0}
+
+    msp.add_linear_dim(
+        base=(view.u_min + ox, view.v_min + oy - 16),
+        p1=(view.u_min + ox, view.v_min + oy),
+        p2=(view.u_max + ox, view.v_min + oy),
+        angle=0,
+        dimstyle="EZDXF",
+        override=override,
+        dxfattribs={"layer": "DIMENSIONS"},
+    ).render()
+
+    msp.add_linear_dim(
+        base=(view.u_min + ox - 10, view.v_min + oy),
+        p1=(view.u_min + ox, view.v_min + oy),
+        p2=(view.u_min + ox, view.v_max + oy),
+        angle=90,
+        dimstyle="EZDXF",
+        override=override,
+        dxfattribs={"layer": "DIMENSIONS"},
+    ).render()
+
+    for cx, cy, r in _distinct_hole_callouts(_detect_circles(view)):
+        msp.add_diameter_dim(
+            center=(cx + ox, cy + oy),
+            radius=r,
+            angle=45,
+            dimstyle="EZDXF",
+            override=override,
+            dxfattribs={"layer": "DIMENSIONS"},
+        ).render()
+
+
 def _draw_title_block_dxf(
     msp, x0: float, y0: float, width: float, height: float,
     part_name: str, material: str | None, part_type: str | None,
+    size_mm: tuple[float, float, float] | None = None,
 ) -> None:
     msp.add_lwpolyline(
         [(x0, y0), (x0 + width, y0), (x0 + width, y0 + height), (x0, y0 + height)],
         dxfattribs={"layer": "BORDER", "closed": True},
     )
     msp.add_line((x0, y0 + height / 2), (x0 + width, y0 + height / 2), dxfattribs={"layer": "BORDER"})
-    msp.add_line((x0 + width * 0.5, y0), (x0 + width * 0.5, y0 + height), dxfattribs={"layer": "BORDER"})
+    msp.add_line((x0 + width * 0.33, y0), (x0 + width * 0.33, y0 + height), dxfattribs={"layer": "BORDER"})
+    msp.add_line((x0 + width * 0.66, y0), (x0 + width * 0.66, y0 + height), dxfattribs={"layer": "BORDER"})
 
     msp.add_text(
         f"PART: {part_name.upper()}", dxfattribs={"layer": "LABELS", "height": 3.5}
@@ -430,12 +569,22 @@ def _draw_title_block_dxf(
     msp.add_text(
         f"TYPE: {(part_type or 'n/a').upper()}", dxfattribs={"layer": "LABELS", "height": 2.5}
     ).set_placement((x0 + 3, y0 + 3))
+    # SIZE is the real (X, Y, Z) size of the solid itself, measured off
+    # the HLR views (_part_size_mm) - NOT the drawing sheet's own layout
+    # extent. Reporting sheet size here was the original bug: a plate's
+    # title block claimed it was 257mm wide because that's how much
+    # sheet space three tiled views + gaps took up, not because the
+    # part was actually that big.
+    size_text = f"SIZE: {size_mm[0]:.1f} x {size_mm[1]:.1f} x {size_mm[2]:.1f} mm" if size_mm else "SIZE: n/a"
+    msp.add_text(
+        size_text, dxfattribs={"layer": "LABELS", "height": 2.5}
+    ).set_placement((x0 + width * 0.33 + 3, y0 + height - 8))
     msp.add_text(
         f"MATERIAL: {material or 'n/a'}", dxfattribs={"layer": "LABELS", "height": 2.5}
-    ).set_placement((x0 + width * 0.5 + 3, y0 + height - 8))
+    ).set_placement((x0 + width * 0.33 + 3, y0 + 3))
     msp.add_text(
         f"DATE: {_dt.date.today().isoformat()}", dxfattribs={"layer": "LABELS", "height": 2.5}
-    ).set_placement((x0 + width * 0.5 + 3, y0 + 3))
+    ).set_placement((x0 + width * 0.66 + 3, y0 + height - 8))
 
 
 def export_dxf(
@@ -462,6 +611,7 @@ def export_dxf(
             for view in views:
                 ox, oy = offsets[view.name]
                 _draw_view_dxf(msp, view, (ox, oy + y_shift))
+                _add_dimensions_dxf(msp, view, (ox, oy + y_shift))
             first = views[0]
             fx, fy = offsets["front"]
             msp.add_text(
@@ -470,21 +620,29 @@ def export_dxf(
         overall_x0 = overall_y0 = float("inf")
         overall_x1 = overall_y1 = float("-inf")
         for _, views, offsets, y_shift in blocks:
-            x0, x1, y0, y1 = _combined_bbox(views, {n: (o[0], o[1] + y_shift) for n, o in offsets.items()})
+            x0, x1, y0, y1 = _combined_bbox(
+                views, {n: (o[0], o[1] + y_shift) for n, o in offsets.items()},
+                label_clearance=20.0, left_clearance=14.0,
+            )
             overall_x0, overall_x1 = min(overall_x0, x0), max(overall_x1, x1)
             overall_y0, overall_y1 = min(overall_y0, y0), max(overall_y1, y1)
+        size_mm = None  # sheet holds multiple distinct parts - no single (X,Y,Z) to report
     else:
         views = _build_three_views(_as_workplane(obj))
         offsets = _layout_three_views(views)
         for view in views:
             _draw_view_dxf(msp, view, offsets[view.name])
-        overall_x0, overall_x1, overall_y0, overall_y1 = _combined_bbox(views, offsets)
+            _add_dimensions_dxf(msp, view, offsets[view.name])
+        overall_x0, overall_x1, overall_y0, overall_y1 = _combined_bbox(
+            views, offsets, label_clearance=20.0, left_clearance=14.0
+        )
+        size_mm = _part_size_mm(views)
 
     tb_height = 16.0
     tb_y0 = overall_y0 - tb_height - 10
     _draw_title_block_dxf(
         msp, overall_x0, tb_y0, overall_x1 - overall_x0, tb_height,
-        part_name, material, part_type,
+        part_name, material, part_type, size_mm,
     )
 
     doc.header["$INSUNITS"] = 4  # 4 = millimeters, matches every other export in this module
@@ -508,6 +666,94 @@ def _draw_open_polyline_pdf(c, points: list[tuple[float, float]], dashed: bool =
         p.lineTo(*pt)
     c.drawPath(p, stroke=1, fill=0)
     c.setDash([])
+
+
+def _draw_arrowhead_pdf(c, tip: tuple[float, float], direction_deg: float, size: float = 5.0) -> None:
+    """Filled arrowhead in PAGE (point) coordinates, tip at `tip`, pointing
+    along `direction_deg`."""
+    import math
+    a1 = math.radians(direction_deg + 150)
+    a2 = math.radians(direction_deg - 150)
+    p1 = (tip[0] + size * math.cos(a1), tip[1] + size * math.sin(a1))
+    p2 = (tip[0] + size * math.cos(a2), tip[1] + size * math.sin(a2))
+    path = c.beginPath()
+    path.moveTo(*tip)
+    path.lineTo(*p1)
+    path.lineTo(*p2)
+    path.close()
+    c.drawPath(path, stroke=0, fill=1)
+
+
+def _draw_horizontal_dim_pdf(c, to_page, x0: float, x1: float, y_measured: float, y_dim: float, text: str) -> None:
+    """Horizontal dimension: extension lines up/down from (x0,y_measured)
+    and (x1,y_measured) to the dimension line at y_dim, then the
+    dimension line itself with arrowheads and centered text - all
+    arguments in the view's local mm coordinates (offset already
+    applied by the caller), converted to page points via `to_page`."""
+    p0 = to_page((x0, y_measured))
+    p1 = to_page((x1, y_measured))
+    d0 = to_page((x0, y_dim))
+    d1 = to_page((x1, y_dim))
+    c.setLineWidth(0.3)
+    c.line(p0[0], p0[1], d0[0], d0[1] + (6 if y_dim > y_measured else -6))
+    c.line(p1[0], p1[1], d1[0], d1[1] + (6 if y_dim > y_measured else -6))
+    c.line(d0[0], d0[1], d1[0], d1[1])
+    _draw_arrowhead_pdf(c, d0, 0.0 if x1 > x0 else 180.0)
+    _draw_arrowhead_pdf(c, d1, 180.0 if x1 > x0 else 0.0)
+    c.setFont("Helvetica", 7)
+    c.drawCentredString((d0[0] + d1[0]) / 2, d0[1] + 2, text)
+
+
+def _draw_vertical_dim_pdf(c, to_page, y0: float, y1: float, x_measured: float, x_dim: float, text: str) -> None:
+    """Vertical counterpart to _draw_horizontal_dim_pdf."""
+    p0 = to_page((x_measured, y0))
+    p1 = to_page((x_measured, y1))
+    d0 = to_page((x_dim, y0))
+    d1 = to_page((x_dim, y1))
+    c.setLineWidth(0.3)
+    c.line(p0[0], p0[1], d0[0] + (6 if x_dim > x_measured else -6), d0[1])
+    c.line(p1[0], p1[1], d1[0] + (6 if x_dim > x_measured else -6), d1[1])
+    c.line(d0[0], d0[1], d1[0], d1[1])
+    _draw_arrowhead_pdf(c, d0, 90.0 if y1 > y0 else 270.0)
+    _draw_arrowhead_pdf(c, d1, 270.0 if y1 > y0 else 90.0)
+    c.saveState()
+    c.setFont("Helvetica", 7)
+    c.translate((d0[0] + d1[0]) / 2, (d0[1] + d1[1]) / 2)
+    c.rotate(90)
+    c.drawCentredString(0, 2, text)
+    c.restoreState()
+
+
+def _draw_diameter_leader_pdf(c, to_page, cx: float, cy: float, r: float, text: str) -> None:
+    """Leader line from a 45-degree point on the hole's actual measured
+    edge out to a diameter callout - standard drafting convention for
+    dimensioning a circular hole."""
+    import math
+    edge_local = (cx + r * math.cos(math.radians(45)), cy + r * math.sin(math.radians(45)))
+    label_local = (cx + (r + 8) * math.cos(math.radians(45)), cy + (r + 8) * math.sin(math.radians(45)))
+    edge_pt = to_page(edge_local)
+    label_pt = to_page(label_local)
+    c.setLineWidth(0.3)
+    c.line(edge_pt[0], edge_pt[1], label_pt[0], label_pt[1])
+    c.setFont("Helvetica", 7)
+    c.drawString(label_pt[0] + 2, label_pt[1] - 2, text)
+
+
+def _add_dimensions_pdf(c, view: _View, offset: tuple[float, float], to_page) -> None:
+    """Real dimensions for one view: overall width (below), overall
+    height (left), and one diameter callout per distinct hole size
+    actually measured in the geometry (see _detect_circles /
+    _distinct_hole_callouts - never from hole_diameter_mm or any other
+    input parameter, for the same reason _part_size_mm reads geometry
+    instead of plate_size/motor_size_mm)."""
+    ox, oy = offset
+    u_min, u_max, v_min, v_max = view.u_min + ox, view.u_max + ox, view.v_min + oy, view.v_max + oy
+
+    _draw_horizontal_dim_pdf(c, to_page, u_min, u_max, v_min, v_min - 16, f"{view.width:.1f}")
+    _draw_vertical_dim_pdf(c, to_page, v_min, v_max, u_min, u_min - 10, f"{view.height:.1f}")
+
+    for cx, cy, r in _distinct_hole_callouts(_detect_circles(view)):
+        _draw_diameter_leader_pdf(c, to_page, cx + ox, cy + oy, r, f"\u2300{2 * r:.1f}")
 
 
 def _draw_view_pdf(c, view: _View, offset: tuple[float, float], to_page) -> None:
@@ -547,15 +793,19 @@ def export_pdf(
         overall_x0 = overall_y0 = float("inf")
         overall_x1 = overall_y1 = float("-inf")
         for (_, views, _, _), offsets in zip(blocks, all_offsets):
-            x0, x1, y0, y1 = _combined_bbox(views, offsets)
+            x0, x1, y0, y1 = _combined_bbox(views, offsets, label_clearance=20.0, left_clearance=14.0)
             overall_x0, overall_x1 = min(overall_x0, x0), max(overall_x1, x1)
             overall_y0, overall_y1 = min(overall_y0, y0), max(overall_y1, y1)
+        part_size_mm = None  # sheet holds multiple distinct parts - no single (X,Y,Z) to report
     else:
         views = _build_three_views(_as_workplane(obj))
         offsets = _layout_three_views(views)
         blocks = [(part_name, views, offsets, 0.0)]
         all_offsets = [offsets]
-        overall_x0, overall_x1, overall_y0, overall_y1 = _combined_bbox(views, offsets)
+        overall_x0, overall_x1, overall_y0, overall_y1 = _combined_bbox(
+            views, offsets, label_clearance=20.0, left_clearance=14.0
+        )
+        part_size_mm = _part_size_mm(views)
 
     drawing_w_mm = overall_x1 - overall_x0
     drawing_h_mm = overall_y1 - overall_y0
@@ -586,6 +836,7 @@ def export_pdf(
             c.drawString(label_pt[0], label_pt[1], label.upper())
         for view in block_views:
             _draw_view_pdf(c, view, offsets[view.name], to_page)
+            _add_dimensions_pdf(c, view, offsets[view.name], to_page)
 
     # Title block
     tb_x0, tb_y0 = margin, margin
@@ -600,7 +851,17 @@ def export_pdf(
     c.setFont("Helvetica", 8)
     c.drawString(tb_x0 + 5, tb_y0 + 8, f"TYPE: {(part_type or 'n/a').upper()}")
     c.drawString(tb_x0 + tb_w * 0.4, tb_y0 + title_block_h - 14, "SCALE: 1:1")
-    c.drawString(tb_x0 + tb_w * 0.4, tb_y0 + 8, f"SIZE: {drawing_w_mm:.1f} x {drawing_h_mm:.1f} mm")
+    # SIZE is the real (X, Y, Z) size of the solid, read back off the HLR
+    # views (_part_size_mm) - NOT drawing_w_mm/drawing_h_mm, which is the
+    # SHEET's layout extent (three tiled views + gaps + title block).
+    # Reporting the sheet extent here was the original bug: a 97mm plate's
+    # title block claimed "257.5 x 122.5mm" because that's how much page
+    # space three views + dimensions took up, not the part's real size.
+    if part_size_mm:
+        size_text = f"SIZE: {part_size_mm[0]:.1f} x {part_size_mm[1]:.1f} x {part_size_mm[2]:.1f} mm"
+    else:
+        size_text = "SIZE: n/a (multi-part sheet)"
+    c.drawString(tb_x0 + tb_w * 0.4, tb_y0 + 8, size_text)
     c.drawString(tb_x0 + tb_w * 0.72, tb_y0 + title_block_h - 14, f"MATERIAL: {material or 'n/a'}")
     c.drawString(tb_x0 + tb_w * 0.72, tb_y0 + 8, f"DATE: {_dt.date.today().isoformat()}")
 
