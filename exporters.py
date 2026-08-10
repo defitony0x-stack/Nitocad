@@ -462,23 +462,42 @@ def _build_part_block(obj: "ShapeLike") -> tuple[list[_View], dict[str, tuple[fl
 
 
 def _stack_part_blocks(
-    parts: list[tuple[str, "ShapeLike"]], block_gap: float = 40.0
+    parts: list[tuple[str, "ShapeLike"]],
+    block_gap: float = 40.0,
+    label_clearance: float = 20.0,
+    left_clearance: float = 14.0,
 ) -> list[tuple[str, list[_View], dict[str, tuple[float, float]], float]]:
     """Lay out one front/top/side block per part, stacked vertically down
     the page. Each part keeps its own internal `_layout_three_views`
     registration; this only adds a per-block Y shift so blocks don't
     overlap. Returns (part_label, views, offsets, y_shift) tuples - the
-    y_shift is added on top of each view's own offset when drawing."""
+    y_shift is added on top of each view's own offset when drawing.
+
+    label_clearance/left_clearance default to the same 20.0/14.0 every
+    export_dxf/export_pdf caller passes to _combined_bbox for the actual
+    sheet extent - this function's own internal _combined_bbox call has
+    to match those, or the vertical space it reserves per block
+    (block_height, below) under-counts the room each view's width
+    dimension line actually needs (drawn ~16mm below the view - see
+    _add_dimensions_dxf/_add_dimensions_pdf - vs. the 6.0 the old
+    default-args call reserved for it), the same "reserved box doesn't
+    match what's actually drawn" defect _combined_bbox's own docstring
+    already warns about for the single-part case. Currently masked by
+    the generous fixed block_gap=40.0 rather than visible as an actual
+    overlap, but not something to leave to that margin alone."""
     blocks: list[tuple[str, list[_View], dict[str, tuple[float, float]], float]] = []
     cursor_y = 0.0
     for name, shape in parts:
         views, offsets = _build_part_block(shape)
-        _, _, y_min, y_max = _combined_bbox(views, offsets)
+        _, _, y_min, y_max = _combined_bbox(
+            views, offsets, label_clearance=label_clearance, left_clearance=left_clearance
+        )
         block_height = y_max - y_min
         y_shift = cursor_y - y_min
         blocks.append((name, views, offsets, y_shift))
         cursor_y += block_height + block_gap
     return blocks
+
 
 
 # --------------------------------------------------------------------
