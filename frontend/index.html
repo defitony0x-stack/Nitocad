@@ -503,6 +503,69 @@
     /* Google sign-in lives only in the dropdown (#googleSignInBtnMobile) */
     #googleSignInBtn, #googleSignInDiv{display:none !important;}
   }
+  /* ---------- hero blueprint scene ---------- */
+  .bp-tabs{display:flex;gap:6px;margin-bottom:12px;}
+  .bp-tab{
+    background:transparent;color:rgba(255,255,255,.6);
+    border:1px solid rgba(255,255,255,.16);border-radius:999px;
+    padding:7px 16px;font-size:.74rem;letter-spacing:.04em;cursor:pointer;
+    transition:color .15s ease,border-color .15s ease,background .15s ease;
+  }
+  .bp-tab:hover{color:#fff;border-color:rgba(255,255,255,.4);}
+  .bp-tab[aria-pressed="true"]{color:#fff;border-color:var(--gold);background:rgba(201,162,75,.14);}
+  .bp-tab:focus-visible{outline:2px solid var(--gold);outline-offset:3px;}
+  .bp-stage{
+    position:relative;aspect-ratio:5/4;overflow:hidden;
+    background:radial-gradient(120% 90% at 50% 40%,#12335F 0%,#0E2C52 60%,#0B2545 100%);
+    border:1px solid rgba(255,255,255,.08);border-radius:12px;
+  }
+  .bp-canvas{position:absolute;inset:0;}
+  .bp-canvas canvas{display:block;pointer-events:none;}
+  .bp-fallback{position:absolute;inset:8% 6% 18%;width:88%;height:74%;}
+  .bp-fallback path{stroke-dasharray:1;stroke-dashoffset:1;animation:bpdraw 2.6s ease forwards;}
+  .bp-fallback path:nth-child(2){animation-delay:.5s}
+  .bp-fallback path:nth-child(3){animation-delay:.8s}
+  .bp-fallback path:nth-child(4){animation-delay:1.2s}
+  .bp-fallback path:nth-child(5){animation-delay:1.4s}
+  @keyframes bpdraw{to{stroke-dashoffset:0;}}
+  .bp-live .bp-fallback{display:none;}
+  .bp-off .bp-canvas{display:none;}
+  .bp-prompt{
+    position:absolute;left:14px;right:14px;bottom:12px;
+    font-size:.68rem;line-height:1.4;color:rgba(255,255,255,.82);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+  .bp-gt{color:var(--gold);}
+  .bp-caret{display:inline-block;width:6px;height:.95em;background:var(--gold);margin-left:2px;vertical-align:-.12em;animation:bpblink 1s steps(2) infinite;}
+  @keyframes bpblink{50%{opacity:0;}}
+  .bp-title{
+    display:grid;grid-template-columns:.7fr 1.5fr 1.1fr;margin-top:12px;
+    border:1px solid rgba(255,255,255,.14);border-radius:8px;
+  }
+  .bp-title div{padding:9px 11px;border-left:1px solid rgba(255,255,255,.14);min-width:0;}
+  .bp-title div:first-child{border-left:0;}
+  .bp-title span{display:block;font-size:.58rem;color:rgba(255,255,255,.5);margin-bottom:3px;}
+  .bp-title b{display:block;font-size:.7rem;font-weight:500;color:#fff;}
+  @media (max-width:900px){
+    .bp-stage{aspect-ratio:1/1;}
+    .bp-title{grid-template-columns:1fr 1fr;}
+    .bp-title div:nth-child(3){grid-column:1/-1;border-left:0;border-top:1px solid rgba(255,255,255,.14);}
+  }
+  /* docked scene: stays on screen after the hero scrolls away (wide screens only) */
+  .bp-dock{
+    position:fixed;right:20px;bottom:20px;width:168px;height:168px;z-index:40;
+    background:radial-gradient(120% 90% at 50% 40%,#12335F 0%,#0B2545 100%);
+    border:1px solid rgba(255,255,255,.12);border-radius:16px;overflow:hidden;
+    opacity:0;transform:translateY(12px);pointer-events:none;
+    transition:opacity .35s ease,transform .35s ease;
+  }
+  .bp-dock.on{opacity:1;transform:none;}
+  .bp-dock-canvas{position:absolute;inset:0;}
+  @media (max-width:899px){.bp-dock{display:none;}}
+  @media (prefers-reduced-motion: reduce){
+    .bp-fallback path{animation:none;stroke-dashoffset:0;}
+    .bp-caret{animation:none;}
+  }
 </style>
 <link rel="stylesheet" href="theme.css">
 <script src="theme.js"></script>
@@ -624,46 +687,31 @@
         </a>
       </div>
 
-      <!-- Signature: the actual product output, rendered as it really comes out -->
+      <!-- Signature: blueprint that draws itself, then becomes a solid (swappable scenes) -->
       <div class="rig">
         <div class="rig-top">
-          <span class="rig-brand mono">NITOCAD · REAL-TIME GENERATION</span>
+          <span class="rig-brand mono">NitoCAD · blueprint to solid</span>
           <span class="rig-dots"><span></span><span></span><span></span></span>
         </div>
-        <div class="panes">
-          <div class="pane settle" style="animation-delay:.05s">
-            <div class="pane-label">PARSED INTENT</div>
-            <div class="sheet">
-              part_type: <b>l_bracket</b><br>
-              width_mm: <b>50</b><br>
-              height_mm: <b>60</b>
-              <div class="rule"></div>
-              fillet_mm: 2.0<br>
-              holes: 2 × M3
-            </div>
-          </div>
-          <div class="pane settle" style="animation-delay:.2s">
-            <div class="pane-label">SOLID GEOMETRY</div>
-            <svg viewBox="0 0 120 130" fill="none">
-              <path d="M14 20 L14 110 L38 110 L38 46 L96 46 L96 20 Z"
-                    fill="#EDF2F4" stroke="#C9A24B" stroke-width="1.3"/>
-              <circle cx="26" cy="98" r="4" fill="none" stroke="#D3541F" stroke-width="1"/>
-              <circle cx="26" cy="60" r="4" fill="none" stroke="#D3541F" stroke-width="1"/>
-              <circle cx="60" cy="34" r="4" fill="none" stroke="#D3541F" stroke-width="1"/>
-              <circle cx="82" cy="34" r="4" fill="none" stroke="#D3541F" stroke-width="1"/>
-            </svg>
-          </div>
-          <div class="pane settle" style="animation-delay:.35s">
-            <div class="pane-label">MANUFACTURING EXPORT</div>
-            <div class="sheet">
-              format: <b>.STEP</b><br>
-              preview: <b>.STL</b><br>
-              schema: valid B-rep
-              <div class="rule"></div>
-              corrections: 0<br>
-              status: ready
-            </div>
-          </div>
+        <div class="bp-tabs" role="group" aria-label="Preview scene">
+          <button type="button" class="bp-tab mono" data-scene="airplane" aria-pressed="true">Airplane</button>
+          <button type="button" class="bp-tab mono" data-scene="house" aria-pressed="false">House</button>
+        </div>
+        <div class="bp-stage" id="bpStage">
+          <div class="bp-canvas"></div>
+          <svg class="bp-fallback" viewBox="0 0 200 160" fill="none" stroke="#C9A24B" stroke-width="1.2" stroke-linejoin="round" aria-hidden="true">
+            <path pathLength="1" d="M20 80 C40 73 150 73 180 80 C150 87 40 87 20 80Z"/>
+            <path pathLength="1" d="M92 75 L116 22 L132 22 L128 75"/>
+            <path pathLength="1" d="M92 85 L116 138 L132 138 L128 85"/>
+            <path pathLength="1" d="M34 78 L24 60 L38 60 L50 76"/>
+            <path pathLength="1" d="M34 82 L24 100 L38 100 L50 84"/>
+          </svg>
+          <div class="bp-prompt mono" aria-hidden="true"><span class="bp-gt">&gt;</span> <span id="bpPrompt"></span><i class="bp-caret"></i></div>
+        </div>
+        <div class="bp-title mono">
+          <div><span>Parts</span><b id="bpParts">–</b></div>
+          <div><span id="bpSizeLabel">Envelope</span><b id="bpSize">–</b></div>
+          <div><span>Status</span><b>Roadmap preview</b></div>
         </div>
       </div>
     </div>
@@ -907,7 +955,6 @@
         <p class="ft-blurb">NitoCAD turns plain-English descriptions into parametric CAD solids on the OpenCASCADE kernel. Describe a bracket, shaft, gear or enclosure and export STEP, IGES, DXF, PDF or STL files.</p>
         <div class="ft-social">
           <a href="https://x.com/nitocad_" target="_blank" rel="noopener" aria-label="NitoCAD on X"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg></a>
-          <a href="https://github.com/ilovemelissachisom-ux/Nitocad-" target="_blank" rel="noopener" aria-label="NitoCAD on GitHub"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg></a>
         </div>
       </div>
       <div class="ft-col">
@@ -932,7 +979,6 @@
         <h4>Connect</h4>
         <ul>
           <li><a href="https://x.com/nitocad_" target="_blank" rel="noopener">X @nitocad_</a></li>
-          <li><a href="https://github.com/ilovemelissachisom-ux/Nitocad-" target="_blank" rel="noopener">GitHub</a></li>
           <li><a href="mailto:Nitocadai@gmail.com">Nitocadai@gmail.com</a></li>
           <li><a href="mailto:elijahanthony005@gmail.com">elijahanthony005@gmail.com</a></li>
         </ul>
@@ -960,12 +1006,14 @@
     }
 }
 </script>
+<div class="bp-dock" id="bpDock" aria-hidden="true"><div class="bp-dock-canvas"></div></div>
+<script type="module" src="hero-blueprint.js"></script>
 <script type="module">
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { STLLoader } from "three/addons/loaders/STLLoader.js";
 (function(){
-  const DEFAULT_API_BASE = "https://nitocad-production-9014.up.railway.app";
+  const DEFAULT_API_BASE = "https://nitocad-production-2df5.up.railway.app";
 
   const submitBtn = document.getElementById('demoSubmit');
   const previewBtn = document.getElementById('demoPreview');
@@ -1469,6 +1517,33 @@ import { STLLoader } from "three/addons/loaders/STLLoader.js";
   }
   // ===== end mobile-safe downloads =====
 
+
+  // Per-wallet on-chain anchoring: the USER'S wallet signs and sends the
+  // anchorDesign() tx (server only prepares + verifies it).
+  async function anchorWithWallet(base, session, jobId){
+    const auth = { 'Authorization': 'Bearer ' + session.session_id };
+    const prep = await fetch(`${base}/api/jobs/${jobId}/anchor/prepare`, { method: 'POST', headers: auth });
+    const p = await prep.json().catch(() => ({}));
+    if (!prep.ok) throw new Error(p.detail || 'Could not prepare anchor.');
+    if (p.already_anchored) return { anchor_tx: p.anchor_tx, explorer_url: p.explorer_url };
+    if (!window.ethereum) throw new Error('No wallet found to sign the anchor.');
+    try {
+      await window.ethereum.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: p.tx.chainId }] });
+    } catch (e) { /* wallet may already be on the chain, or not support switching */ }
+    const txHash = await window.ethereum.request({ method: 'eth_sendTransaction', params: [p.tx] });
+    for (let i = 0; i < 20; i++) {
+      const r = await fetch(`${base}/api/jobs/${jobId}/anchor/confirm`, {
+        method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tx_hash: txHash }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.detail || 'Anchor verification failed.');
+      if (d.status === 'anchored') return d;
+      await new Promise(res => setTimeout(res, 2000));
+    }
+    throw new Error('Anchor submitted but not confirmed yet - check My Projects shortly.');
+  }
+
   async function downloadFormat(base, fmt, jobId, btn){
     // No payment here - the job's original /generate payment already
     // covers every export format pulled from it. See
@@ -1490,39 +1565,9 @@ import { STLLoader } from "three/addons/loaders/STLLoader.js";
         throw new Error(err.detail || `Export failed (HTTP ${resp.status}).`);
       }
       const info = await resp.json();
-      const anchorTx = info.anchor_tx;
-      const explorerUrl = info.explorer_url;
-      // 2) plain navigation to an attachment URL - works on phones
+      // 2) plain navigation to an attachment URL - works on phones.
+      //    Downloading never anchors; see anchorJob() for the optional button.
       nitoDeliver(base + info.url, info.filename || `${jobId}.${fmt}`);
-      if (anchorTx && explorerUrl) {
-        showProvenanceBanner(jobId, anchorTx, explorerUrl);
-      } else if (fmt === 'step' && info.anchoring) {
-        // The download has started; the server now submits the on-chain
-        // anchor. Poll briefly for the tx and show the banner when it lands.
-        statusEl.classList.remove('err');
-        statusEl.textContent = 'STEP downloading - anchoring on-chain…';
-        (async () => {
-          for (let i = 0; i < 15; i++) {
-            await new Promise(r => setTimeout(r, 2000));
-            try {
-              const r = await fetch(`${base}/api/jobs/${jobId}/provenance`, {
-                headers: { 'Authorization': 'Bearer ' + session.session_id },
-              });
-              if (!r.ok) continue;
-              const d = await r.json();
-              if (d.anchored && d.anchor_tx) {
-                statusEl.textContent = 'STEP downloaded and anchored on-chain.';
-                showProvenanceBanner(jobId, d.anchor_tx, d.explorer_tx_url);
-                return;
-              }
-            } catch (e) { /* keep polling */ }
-          }
-          statusEl.textContent = 'STEP downloaded. Anchor still confirming - see My Projects in a minute.';
-        })();
-      } else if (fmt === 'step') {
-        statusEl.classList.remove('err');
-        statusEl.textContent = 'STEP downloaded. On-chain anchoring is not enabled on the server yet.';
-      }
     } catch (err) {
       alert('Download failed: ' + err.message);
     } finally {
@@ -1531,6 +1576,27 @@ import { STLLoader } from "three/addons/loaders/STLLoader.js";
     }
   }
   window.downloadFormat = function(base, fmt, jobId, ev){ downloadFormat(base, fmt, jobId, ev.target); };
+
+  // Optional, separate from downloading: the user's own wallet signs the anchor.
+  window.anchorJob = async function(base, jobId, btn){
+    const session = getWalletSession(base);
+    if(!session){ alert('Your wallet session expired - reconnect first.'); return; }
+    const original = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Confirm in your wallet…';
+    try {
+      const d = await anchorWithWallet(base, session, jobId);
+      statusEl.classList.remove('err');
+      statusEl.textContent = 'Anchored on BOT Chain.';
+      showProvenanceBanner(jobId, d.anchor_tx, d.explorer_url);
+      const box = document.getElementById('anchorBox');
+      if (box) box.remove();
+    } catch (e) {
+      alert('Anchor not completed: ' + e.message);
+      btn.disabled = false;
+      btn.textContent = original;
+    }
+  };
 
   // GET /download/{fmt}/{filename} is ownership-gated now, except for
   // anonymous /preview output (see db.find_job_owner and web_app.py's
@@ -1744,7 +1810,23 @@ import { STLLoader } from "three/addons/loaders/STLLoader.js";
     } else if (data.job_id) {
       meta = `<p class="demo-dl-meta">Job <code>${data.job_id}</code> - your generation payment already covers STEP/IGES/DXF/PDF, built individually only when you click a format, at no extra charge.</p>`;
     }
-    downloadsEl.innerHTML = meta + `<div class="demo-dl-links">${links}</div>`;
+    let anchorBox = '';
+    if (data.job_id && !isPreview) {
+      anchorBox = `
+      <div id="anchorBox" style="margin-top:16px;padding:14px 16px;border-radius:12px;border:1px solid rgba(19,165,125,.4);background:rgba(19,165,125,.07);">
+        <div style="font-family:IBM Plex Mono,monospace;font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;opacity:.75;">⛓ Optional - BOT Chain</div>
+        <div style="font-weight:600;margin-top:4px;">Anchor this design on BOT Chain</div>
+        <ul style="margin:8px 0 12px 18px;padding:0;font-size:.85rem;line-height:1.55;">
+          <li><b>Tamper-proof record</b> - a permanent, timestamped entry on BOT Chain that nobody, including us, can edit later.</li>
+          <li><b>Your wallet on record</b> - the wallet you sign with is stored as the submitter, so you can show you registered this design first.</li>
+          <li><b>Verifiable by anyone</b> - the parameters hash, template version and STEP file hash are public, so anyone can re-check the part matches.</li>
+          <li><b>Works without NitoCAD</b> - the full parameters live in the chain's event log, so the proof outlasts any server.</li>
+        </ul>
+        <div style="font-size:.78rem;opacity:.7;margin-bottom:10px;">Optional. Costs a small BOT network fee, paid from your wallet. Anchoring is separate from downloading - skip it if you don't need it.</div>
+        <button class="btn btn-primary" id="anchorBtn" onclick="anchorJob('${base}','${data.job_id}',this)">⛓ Anchor on BOT Chain</button>
+      </div>`;
+    }
+    downloadsEl.innerHTML = meta + `<div class="demo-dl-links">${links}</div>` + anchorBox;
 
     // Always prefer the job-id proxy so the viewer never hits R2
     // cross-origin (R2 has no CORS rule for this frontend) and never
