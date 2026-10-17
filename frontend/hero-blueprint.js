@@ -19,7 +19,7 @@ function boot() {
     return;
   }
   renderer.setClearColor(0x000000, 0);
-  renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.15;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.15; renderer.localClippingEnabled = true;
   host.appendChild(renderer.domElement);
   stage.classList.add("bp-live");
 
@@ -265,7 +265,7 @@ function boot() {
   }
 
   /* ---------- scene: four-engine double-deck airliner (1 unit = 1 m) ---------- */
-  function buildPlane() {
+  function buildPlane(cut) {
     TEXBY.clear(); GLOSSY.clear();
     const P = [], WHITE = 0xf2f5f7, GLASS = 0x1e2c44, GEAR = 0x8b95a1, TIRE = 0x15181d, BLUE = 0x1d3f7a, ENGW = 0xe9edf0, SKIN = 0xe6ebef;
     GLOSSY.add(GLASS);
@@ -294,7 +294,7 @@ function boot() {
       const r = FR(x), cz = r * Math.sqrt(1 - Math.pow(0.55 / (1.18 * r), 2)) + 0.03;
       lower.push([x, 0.55, s * cz, 0.6, 0.78]);
     });
-    for (let x = -7; x <= 18.5; x += 1.5) [-1, 1].forEach((s) => upper.push([x, 3.1, s * (UR(x) + 0.03), 0.52, 0.68]));
+    for (let x = -7; x <= 18.5; x += 1.5) [-1, 1].forEach((s) => (cut && x > -11 && x < 15) || upper.push([x, 3.1, s * (UR(x) + 0.03), 0.52, 0.68]));
     const lw = ovals(lower), uw = ovals(upper);
     P.push(mk("Cabin windows, main deck", lw.geo, GLASS, { seg: () => lw.seg, max: 0.97 }));
     P.push(mk("Cabin windows, upper deck", uw.geo, GLASS, { seg: () => uw.seg, max: 0.97 }));
@@ -308,7 +308,11 @@ function boot() {
       const secs = [2.6, 8, 14.5, 22, 30, 36, 40].map((z) => ({
         le: [leAt(z), wy(z), s * z], te: [teAt(z), wy(z), s * z], t: (leAt(z) - teAt(z)) * (0.13 - 0.045 * z / 40), up: [0, 1, 0]
       }));
-      const w = loft(secs, (x, y, z, sg) => (sg > 0 ? SKIN : 0xaeb8c3), [0, 2, 5, 9, 12, 14]);
+      const w = loft(secs, (x, y, z, sg) => {
+        if (sg < 0) return 0xaeb8c3;
+        const az = Math.abs(z), s = (leAt(az) - x) / (leAt(az) - teAt(az));
+        return s > 0.72 && az > 8 && az < 37 ? 0xcdd5dd : s < 0.1 ? 0xd9dfe5 : SKIN;
+      }, [0, 2, 5, 9, 12, 14]);
       P.push(mk("Wing, " + side, w.geo, 0xffffff, { vc: true, seg: () => w.seg, r: 0.5 }));
       P.push(mk("Wingtip fence, " + side, extrude(polyShape([[-17.4, 0], [-21.5, 0], [-21.9, 2.1], [-19.6, 2.1]]), 0.12), SKIN,
         { pos: [0, wy(40) + 0.1, s * 40 - 0.06], r: 0.5 }));
@@ -365,6 +369,28 @@ function boot() {
     [-1, 1].forEach((s) => leg("Body gear " + (s > 0 ? "starboard" : "port"), -7, -3.6, s * 2.4, 2, 1.7, 0.78));
     [-1, 1].forEach((s) => leg("Wing gear " + (s > 0 ? "starboard" : "port"), -2.5, -2.6, s * 8.6, 2, 1.7, 0.78));
 
+    // Cutaway: open the roof over the main cabin and fit it out.
+    if (cut) {
+      const inR = (x, y) => x > -11 && x < 15 && y > 1.6;
+      const planes = [new THREE.Plane(new THREE.Vector3(-1, 0, 0), -11), new THREE.Plane(new THREE.Vector3(1, 0, 0), -15), new THREE.Plane(new THREE.Vector3(0, -1, 0), 1.6)];
+      ["Fuselage", "Upper deck"].forEach((nm) => {
+        const p = P.find((q) => q.name === nm), m = p.mesh.material, a = p.seg, keep = [];
+        m.clippingPlanes = planes; m.clipIntersection = true;
+        for (let i = 0; i < a.length; i += 6) if (!inR((a[i] + a[i + 3]) / 2, (a[i + 1] + a[i + 4]) / 2)) for (let k = 0; k < 6; k++) keep.push(a[i + k]);
+        p.seg = new Float32Array(keep);
+      });
+      P.push(mk("Cabin floor", boxes([[1.5, -0.6, 0, 26.2, 0.1, 6.9]]), 0x7d838c, { r: 0.9 }));
+      P.push(mk("Aisle carpet", boxes([[1.5, -0.54, -1.4, 26, 0.02, 0.5], [1.5, -0.54, 1.4, 26, 0.02, 0.5]]), 0x8f2f3a, { r: 1 }));
+      P.push(mk("Overhead bins", boxes([[1.5, 1.3, -3.0, 26.2, 0.45, 0.6], [1.5, 1.3, 3.0, 26.2, 0.45, 0.6]]), 0xdfe4e9, { r: 0.6 }));
+      P.push(mk("Cabin bulkheads", boxes([[-11.3, 0.52, 0, 0.1, 2.15, 6.8], [15.0, 0.52, 0, 0.1, 2.15, 6.8]]), 0xcfd5db, { r: 0.7 }));
+      const zs = [-3.0, -2.45, -1.9, -0.85, -0.28, 0.28, 0.85, 1.9, 2.45, 3.0];
+      for (let r = 0; r < 28; r++) {
+        const x = -10.8 + r * 0.9, b = [];
+        zs.forEach((z) => b.push([x, -0.1, z, 0.46, 0.1, 0.5], [x - 0.2, 0.28, z, 0.08, 0.72, 0.5], [x, -0.36, z, 0.1, 0.4, 0.1]));
+        P.push(mk("Seat row " + (r + 1), boxes(b), 0x2b4f8c, { r: 0.8 }));
+      }
+    }
+
     // Apron: soft contact shadow and the yellow lead-in line. Not part of the envelope.
     P.push(mk("Apron shadow", new THREE.PlaneGeometry(90, 40), 0x000000, { rot: [-Math.PI / 2, 0, 0], pos: [-2, -8.29, 0], dress: true, map: BLOB, tex: null, max: 0.5, r: 1 }));
     P.push(mk("Taxi line", new THREE.PlaneGeometry(95, 0.4), 0xf2c230, { rot: [-Math.PI / 2, 0, 0], pos: [10, -8.28, 0], dress: true, r: 0.9, max: 0.9 }));
@@ -383,7 +409,7 @@ function boot() {
   }
 
   /* ---------- scene: two-storey house with garage, porch and dormer (1 unit = 1 m) ---------- */
-  function buildHouse() {
+  function buildHouse(cut) {
     const W = 12, D = 8, H = 5.6, R = 3.2, t = 0.28, P = [];
     TEXBY.clear(); GLOSSY.clear();
     const WALL = 0xe1d9c6, TRIM = 0xf7f5f0, ROOF = 0x4b4f57, ROOFD = 0x363a41, GLASS = 0x6c93bd, BRICK = 0xb0583d, SLAB = 0xbab7af, DOOR = 0x8a2f25,
@@ -586,8 +612,42 @@ function boot() {
       P.push(mk("Downspout " + (i + 1), new THREE.CylinderGeometry(0.05, 0.05, H - 0.4, 8), TRIM, { pos: [p[0], (H - 0.4) / 2 + 0.1, p[1]], angle: 60 })));
     [-4.2, 2.2].forEach((x, i) => P.push(mk("Roof vent " + (i + 1), new THREE.CylinderGeometry(0.07, 0.09, 0.5, 8), 0x1f2226, { pos: [x, 7.45, -1.9], angle: 60 })));
 
+    // Cutaway: clip above the first floor, drop the front and east walls, furnish the ground floor.
+    let clip = null;
+    if (cut) {
+      clip = new THREE.Plane(new THREE.Vector3(0, -1, 0), 2.95);
+      GLOSSY.add(0x1e2c44);
+      const RM = /^(Front wall|Gable wall, east|Garage front wall|Garage door|Garage gable wall|Garage side window|Entry door|Door handle|Living window|Kitchen window|Sidelight|Exterior lamps|Window shutters|Bedroom \d window)|roof|chimney|flue|dormer|porch beam|attic/i;
+      for (let i = P.length - 1; i >= 0; i--) if (RM.test(P[i].name)) P.splice(i, 1);
+      const WOOD = 0xb98a5a, SOFA = 0x5d6f86, WHT = 0xe9e6df, TOP = 0x3a3d42, INT = 0xefece4;
+      P.push(mk("Wood floor", boxes([[-1.325, 0.02, 0, 9.05, 0.04, 7.7]]), WOOD, { r: 0.6 }));
+      P.push(mk("Tile floor", boxes([[4.6, 0.02, 0, 2.7, 0.04, 7.7]]), 0xd7d3cb, { r: 0.4 }));
+      P.push(mk("Interior partition", boxes([[-1.0, 1.45, -1.5, 0.12, 2.9, 5.0]]), INT, {}));
+      const st = [];
+      for (let i = 0; i < 15; i++) st.push([-5.2, 0.1 * (i + 1), 3.0 - 0.33 * i, 1.0, 0.2 * (i + 1), 0.33]);
+      P.push(mk("Staircase", boxes(st), 0xc9a27a, { r: 0.6 }));
+      P.push(mk("Hall console", boxes([[-1.35, 0.45, -0.2, 0.4, 0.9, 1.4]]), 0x6b4a2f, {}));
+      P.push(mk("Hall runner", boxes([[-3.0, 0.05, 1.5, 1.2, 0.02, 3.0]]), 0x3b5a7a, { r: 1 }));
+      P.push(mk("Sofa", boxes([[1.2, 0.3, -2.9, 2.3, 0.5, 0.95], [1.2, 0.75, -3.35, 2.3, 0.5, 0.22], [0.0, 0.45, -2.9, 0.22, 0.7, 0.95], [2.4, 0.45, -2.9, 0.22, 0.7, 0.95]]), SOFA, { r: 0.9 }));
+      P.push(mk("Living rug", boxes([[1.2, 0.05, -0.9, 2.8, 0.02, 2.4]]), 0x8a4b3d, { r: 1 }));
+      P.push(mk("Coffee table", boxes([[1.2, 0.42, -0.9, 1.1, 0.06, 0.6], [0.75, 0.2, -1.1, 0.06, 0.4, 0.06], [1.65, 0.2, -1.1, 0.06, 0.4, 0.06], [0.75, 0.2, -0.7, 0.06, 0.4, 0.06], [1.65, 0.2, -0.7, 0.06, 0.4, 0.06]]), 0x6b4a2f, { r: 0.5 }));
+      P.push(mk("Armchair", boxes([[2.7, 0.28, 0.3, 0.8, 0.5, 0.8], [3.1, 0.65, 0.3, 0.15, 0.7, 0.8]]), 0xb06a3b, { r: 0.9 }));
+      P.push(mk("Plant pot", new THREE.CylinderGeometry(0.2, 0.15, 0.4, 12), 0x3a3d42, { pos: [-0.3, 0.2, 3.3], angle: 60 }));
+      P.push(mk("Plant", new THREE.IcosahedronGeometry(0.4, 1), LEAF, { pos: [-0.3, 0.75, 3.3], flat: true, r: 1, seg: () => new Float32Array(0) }));
+      P.push(mk("Kitchen cabinets", boxes([[4.2, 0.45, -3.45, 1.9, 0.9, 0.55]]), WHT, {}));
+      P.push(mk("Countertops", boxes([[4.2, 0.92, -3.45, 1.95, 0.05, 0.6], [4.3, 0.92, 0.0, 2.0, 0.05, 0.9]]), TOP, { r: 0.3 }));
+      P.push(mk("Kitchen island", boxes([[4.3, 0.45, 0.0, 1.9, 0.9, 0.8]]), WHT, {}));
+      P.push(mk("Refrigerator", boxes([[5.55, 0.95, -3.4, 0.8, 1.9, 0.65]]), 0xc4ccd5, { m: 0.6, r: 0.3 }));
+      [3.7, 4.3, 4.9].forEach((x, i) => P.push(mk("Bar stool " + (i + 1), new THREE.CylinderGeometry(0.18, 0.18, 0.65, 14), 0x2a2a2a, { pos: [x, 0.33, 0.75], angle: 60 })));
+      P.push(mk("Car body", boxes([[9.3, 0.6, 0.5, 1.8, 0.55, 4.3]]), 0x2f4468, { m: 0.3, r: 0.35 }));
+      P.push(mk("Car cabin", boxes([[9.3, 1.1, 0.3, 1.55, 0.5, 2.3]]), 0x1e2c44, { r: 0.1 }));
+      [[-0.9, -0.9], [0.9, -0.9], [-0.9, 1.9], [0.9, 1.9]].forEach((w, i) => P.push(mk("Car wheel " + (i + 1), new THREE.CylinderGeometry(0.33, 0.33, 0.24, 18), 0x15181d, { rot: [0, 0, Math.PI / 2], pos: [9.3 + w[0], 0.33, w[1]], angle: 40, r: 0.9 })));
+      P.push(mk("Garage shelf", boxes([[12.2, 0.9, -1.5, 0.4, 1.8, 3.0]]), 0x7b8088, {}));
+      P.push(mk("Workbench", boxes([[9.3, 0.45, -2.8, 3.0, 0.9, 0.5]]), 0x8a6a45, {}));
+    }
     return {
       parts: P,
+      clip,
       gridStep: 1,
       dims: (box) => {
         const gy = box.min.y;
@@ -605,18 +665,21 @@ function boot() {
       prompt: "Four-engine double-deck airliner, 80 m wingspan, swept wings",
       alt: "A four-engine double-deck airliner drawn as a blueprint line by line, then turning into a solid 3D model",
       envelope: "length × span × height",
-      cam: { from: { az: 0.0, el: 1.34 }, to: { az: 0.72, el: 0.36 } }
+      cam: { from: { az: 0.0, el: 1.34 }, to: { az: 0.72, el: 0.36 } },
+      camCut: { from: { az: 0.0, el: 1.34 }, to: { az: 0.45, el: 0.9 } }
     },
     {
       id: "house", build: buildHouse,
       prompt: "Four-bedroom two-storey house, double garage, covered porch",
       alt: "A two-storey house with garage and porch drawn as a blueprint line by line, then turning into a solid 3D model",
       envelope: "width × depth × height",
-      cam: { from: { az: 0.0, el: 0.05 }, to: { az: 0.52, el: 0.3 } }
+      cam: { from: { az: 0.0, el: 0.05 }, to: { az: 0.52, el: 0.3 } },
+      camCut: { from: { az: 0.0, el: 0.05 }, to: { az: 0.5, el: 0.62 } }
     }
   ];
 
   /* ---------- runtime state ---------- */
+  const cutBtn = document.getElementById("bpCut");
   const el = {
     tabs: Array.prototype.slice.call(stage.parentNode.querySelectorAll(".bp-tab")),
     prompt: document.getElementById("bpPrompt"),
@@ -625,7 +688,7 @@ function boot() {
     sizeLabel: document.getElementById("bpSizeLabel")
   };
   const S = {
-    index: -1, t: 0, idle: 0, out: 0, next: -1, userPicked: false, visible: true,
+    index: -1, cut: false, t: 0, idle: 0, out: 0, next: -1, userPicked: false, visible: true,
     center: new THREE.Vector3(), dist: 30, cur: null,
     structN: 0, dimN: 0, lines: null, dimLines: null, grid: null, group: null, promptText: ""
   };
@@ -658,7 +721,10 @@ function boot() {
   function loadScene(i) {
     disposeCurrent();
     const def = SCENES[i];
-    const built = def.build();
+    const built = def.build(S.cut);
+    const cl = built.clip ? [built.clip] : [];
+    renderer.clippingPlanes = cl; if (dockR) dockR.clippingPlanes = cl;
+    if (cutBtn) cutBtn.setAttribute("aria-pressed", S.cut ? "true" : "false");
     S.index = i; S.cur = def; S.t = 0; S.idle = 0; S.out = 0; S.next = -1;
 
     S.group = new THREE.Group();
@@ -738,7 +804,7 @@ function boot() {
     S.grid.material.opacity = 0.2 * clamp(t / 0.8, 0, 1) * k;
 
     const u = easeCubic(clamp((t - 0.8) / 4.6, 0, 1));
-    const c = S.cur.cam;
+    const c = S.cut && S.cur.camCut ? S.cur.camCut : S.cur.cam;
     placeCamera(lerp(c.from.az, c.to.az, u) + S.idle, lerp(c.from.el, c.to.el, u));
 
     if (el.prompt) {
@@ -748,6 +814,12 @@ function boot() {
     }
   }
 
+  function toggleCut() {
+    if (S.out > 0) return;
+    S.userPicked = true; S.cut = !S.cut;
+    if (reduce) { loadScene(S.index); renderOnce(); return; }
+    S.next = S.index; S.out = 0.35;
+  }
   function switchTo(i, byUser) {
     if (i === S.index || S.out > 0) return;
     if (byUser) S.userPicked = true;
@@ -779,7 +851,7 @@ function boot() {
     try {
       dockR = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "low-power" });
       dockR.setClearColor(0x000000, 0);
-      dockR.toneMapping = THREE.ACESFilmicToneMapping; dockR.toneMappingExposure = 1.15;
+      dockR.toneMapping = THREE.ACESFilmicToneMapping; dockR.toneMappingExposure = 1.15; dockR.localClippingEnabled = true;
       dockR.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
       dockR.setSize(dockHost.clientWidth || 168, dockHost.clientHeight || 168, false);
       dockR.domElement.style.cssText = "width:100%;height:100%;display:block";
@@ -818,6 +890,7 @@ function boot() {
   }
 
   el.tabs.forEach((b, k) => b.addEventListener("click", () => switchTo(k, true)));
+  if (cutBtn) cutBtn.addEventListener("click", toggleCut);
   if (window.ResizeObserver) new ResizeObserver(() => { resize(); if (reduce) renderOnce(); }).observe(host);
   else window.addEventListener("resize", () => { resize(); if (reduce) renderOnce(); });
   if (window.IntersectionObserver) {
