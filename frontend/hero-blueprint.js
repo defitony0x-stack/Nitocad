@@ -19,14 +19,18 @@ function boot() {
     return;
   }
   renderer.setClearColor(0x000000, 0);
+  renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.15;
   host.appendChild(renderer.domElement);
   stage.classList.add("bp-live");
 
-  const COL = { line: 0xbfd3f2, lineSolid: 0x1d3659, dim: 0xff8f5e, grid: 0xc9a24b };
+  const COL = { line: 0xbfd3f2, lineSolid: 0x3a4658, dim: 0xff8f5e, grid: 0xc9a24b };
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(30, 1.25, 0.1, 400);
-  scene.add(new THREE.HemisphereLight(0xffffff, 0x1b3358, 1.5));
-  const sun = new THREE.DirectionalLight(0xffffff, 1.7);
+  const envTex = (() => { const c = document.createElement("canvas"); c.width = 256; c.height = 128; const g = c.getContext("2d"), gr = g.createLinearGradient(0, 0, 0, 128); gr.addColorStop(0, "#7fa8e6"); gr.addColorStop(0.46, "#e9eef5"); gr.addColorStop(0.5, "#8a8f98"); gr.addColorStop(1, "#2b313b"); g.fillStyle = gr; g.fillRect(0, 0, 256, 128); g.fillStyle = "#fff"; g.fillRect(150, 14, 56, 26); const t = new THREE.CanvasTexture(c); t.mapping = THREE.EquirectangularReflectionMapping; t.colorSpace = THREE.SRGBColorSpace; return t; })();
+  scene.environment = envTex; scene.environmentIntensity = 0.7;
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x1b3358, 0.55));
+  const rim = new THREE.DirectionalLight(0x9fc3ff, 0.6); rim.position.set(-8, 4, -6); scene.add(rim);
+  const sun = new THREE.DirectionalLight(0xfff1dc, 2.2);
   sun.position.set(6, 10, 8);
   scene.add(sun);
 
@@ -62,24 +66,36 @@ function boot() {
   const extrude = (shape, depth) =>
     new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: false, steps: 1 });
 
-  const mat = (color, max = 1) => {
-    const m = new THREE.MeshLambertMaterial({
+  const mat = (color, max = 1, o = {}) => {
+    const gl = GLOSSY.has(color);
+    const m = new THREE.MeshStandardMaterial({
       color, side: THREE.DoubleSide, transparent: true, opacity: 0,
+      roughness: gl ? 0.08 : (o.r == null ? 0.72 : o.r), metalness: gl ? 0.4 : (o.m || 0),
+      vertexColors: !!(o.paint || o.vc), map: o.map || null, flatShading: !!o.flat, emissive: o.em || 0x000000,
       polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1
     });
+    m.envMapIntensity = gl ? 1.6 : 1;
     m.userData.max = max;
     return m;
   };
 
   function mk(name, geo, color, o = {}) {
-    const mesh = new THREE.Mesh(geo, mat(color, o.max == null ? 1 : o.max));
+    if (o.paint) paintGeo(geo, o.paint);
+    const T = o.tex === undefined ? TEXBY.get(color) : o.tex;
+    const mesh = new THREE.Mesh(geo, mat(color, o.max == null ? 1 : o.max, o));
+    if (T) {
+      const pr = geo.parameters, bx = pr && pr.width != null, m = mesh.material;
+      m.map = rep(T.t, bx ? Math.max(pr.width, pr.depth || 0) / T.w : 1 / T.w, bx ? Math.max(pr.height, pr.depth || 0) / T.h : 1 / T.h);
+      if (T.bump) { m.bumpMap = m.map; m.bumpScale = 1.5; }
+    }
+    if (o.dress) mesh.userData.dress = true;
     if (o.pos) mesh.position.set(o.pos[0], o.pos[1], o.pos[2]);
     if (o.rot) mesh.rotation.set(o.rot[0], o.rot[1], o.rot[2]);
     if (o.scl) mesh.scale.set(o.scl[0], o.scl[1], o.scl[2]);
     mesh.updateMatrix();
-    let seg = o.seg ? o.seg(mesh.matrix) : edgeSeg(geo, mesh.matrix, o.angle == null ? 28 : o.angle);
+    let seg = o.seg ? o.seg(mesh.matrix) : o.dress ? new Float32Array(0) : edgeSeg(geo, mesh.matrix, o.angle == null ? 28 : o.angle);
     if (o.extra) seg = cat(seg, o.extra);
-    return { name, mesh, seg };
+    return { name, mesh, seg, dress: !!o.dress };
   }
 
   // Station rings plus longitudinal lines, the way a lofted fuselage is drawn.
@@ -103,8 +119,8 @@ function boot() {
   }
   function lathePart(name, ctrl, color, o = {}) {
     const sm = new THREE.SplineCurve(ctrl.map((c) => new THREE.Vector2(c[0], c[1])))
-      .getPoints(36).map((p) => new THREE.Vector2(Math.max(0, p.x), p.y));
-    const geo = new THREE.LatheGeometry(sm, 32);
+      .getPoints(o.res || 36).map((p) => new THREE.Vector2(Math.max(0, p.x), p.y));
+    const geo = new THREE.LatheGeometry(sm, o.segs || 32);
     return mk(name, geo, color, Object.assign({}, o, { seg: (m) => xf(latheLines(ctrl, sm, o.long || 10), m) }));
   }
 
@@ -159,108 +175,199 @@ function boot() {
     return extrude(polyShape(pts), thick);
   }
 
+  /* ---------- realism helpers: textures, painted vertices, lofted airfoils, merged boxes ---------- */
+  const TEXBY = new Map(), GLOSSY = new Set();
+  const rnd = (() => { let s = 11; return () => (s = (s * 16807) % 2147483647) / 2147483647; })();
+  const mkTex = (w, h, draw) => {
+    const c = document.createElement("canvas"); c.width = w; c.height = h; draw(c.getContext("2d"), w, h);
+    const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
+    return t;
+  };
+  const rep = (t, u, v) => { const c = t.clone(); c.needsUpdate = true; c.repeat.set(u, v); return c; };
+  const BLOB = mkTex(128, 128, (g, w, h) => {
+    const r = g.createRadialGradient(64, 64, 4, 64, 64, 62);
+    r.addColorStop(0, "rgba(0,0,0,.9)"); r.addColorStop(0.55, "rgba(0,0,0,.55)"); r.addColorStop(1, "rgba(0,0,0,0)");
+    g.fillStyle = r; g.fillRect(0, 0, w, h);
+  });
+  BLOB.wrapS = BLOB.wrapT = THREE.ClampToEdgeWrapping;
+  const paintGeo = (geo, fn) => {
+    const p = geo.attributes.position, c = new Float32Array(p.count * 3), k = new THREE.Color();
+    for (let i = 0; i < p.count; i++) { k.set(fn(p.getX(i), p.getY(i), p.getZ(i))); c[i * 3] = k.r; c[i * 3 + 1] = k.g; c[i * 3 + 2] = k.b; }
+    geo.setAttribute("color", new THREE.BufferAttribute(c, 3));
+  };
+  // Many boxes merged into one geometry. list: [cx, cy, cz, w, h, d]
+  function boxes(list) {
+    const pos = [], nor = [], uv = [], idx = [];
+    list.forEach(([cx, cy, cz, w, h, d]) => {
+      const g = new THREE.BoxGeometry(w, h, d), o = pos.length / 3, p = g.attributes.position.array;
+      for (let i = 0; i < p.length; i += 3) pos.push(p[i] + cx, p[i + 1] + cy, p[i + 2] + cz);
+      nor.push(...g.attributes.normal.array); uv.push(...g.attributes.uv.array);
+      g.index.array.forEach((i) => idx.push(i + o));
+      g.dispose();
+    });
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute("normal", new THREE.Float32BufferAttribute(nor, 3));
+    g.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+    g.setIndex(idx);
+    return g;
+  }
+  // Oval windows lying in planes of constant z. list: [cx, cy, cz, w, h]
+  function ovals(list) {
+    const pos = [], idx = [], out = [], N = 12;
+    list.forEach(([cx, cy, cz, w, h]) => {
+      const b = pos.length / 3;
+      pos.push(cx, cy, cz);
+      for (let k = 0; k < N; k++) {
+        const a = (k / N) * 6.2832;
+        pos.push(cx + Math.cos(a) * w / 2, cy + Math.sin(a) * h / 2, cz);
+        idx.push(b, b + 1 + k, b + 1 + ((k + 1) % N));
+      }
+      for (let k = 0; k < N; k++) {
+        const A = (b + 1 + k) * 3, B = (b + 1 + ((k + 1) % N)) * 3;
+        out.push(pos[A], pos[A + 1], pos[A + 2], pos[B], pos[B + 1], pos[B + 2]);
+      }
+    });
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+    g.setIndex(idx); g.computeVertexNormals();
+    return { geo: g, seg: new Float32Array(out) };
+  }
+  // Lofted airfoil surface. secs: [{ le, te, t, up }] with t = max thickness in metres.
+  const ytf = (s) => 0.2969 * Math.sqrt(s) - 0.126 * s - 0.3516 * s * s + 0.2843 * s ** 3 - 0.1036 * s ** 4;
+  function loft(secs, col, lines, n = 14) {
+    const pos = [], rgb = [], idx = [], out = [], M = 2 * n, k = new THREE.Color(), seq = [];
+    for (let i = 0; i <= n; i++) seq.push([i, 1]);
+    for (let i = n - 1; i > 0; i--) seq.push([i, -1]);
+    secs.forEach((sc) => {
+      const c = [sc.te[0] - sc.le[0], sc.te[1] - sc.le[1], sc.te[2] - sc.le[2]];
+      seq.forEach(([i, sg]) => {
+        const s = (1 - Math.cos(Math.PI * i / n)) / 2, h = 5.05 * sc.t * ytf(s) * sg;
+        const p = [sc.le[0] + c[0] * s + sc.up[0] * h, sc.le[1] + c[1] * s + sc.up[1] * h, sc.le[2] + c[2] * s + sc.up[2] * h];
+        pos.push(p[0], p[1], p[2]);
+        k.set(col(p[0], p[1], p[2], sg)); rgb.push(k.r, k.g, k.b);
+      });
+    });
+    for (let a = 0; a < secs.length - 1; a++) for (let j = 0; j < M; j++) {
+      const j2 = (j + 1) % M, p = a * M + j, q = a * M + j2, r = (a + 1) * M + j, s2 = (a + 1) * M + j2;
+      idx.push(p, q, r, q, s2, r);
+    }
+    const L = (secs.length - 1) * M;
+    for (let j = 1; j < M - 1; j++) idx.push(L, L + j, L + j + 1);
+    const ln = (A, B) => out.push(pos[A * 3], pos[A * 3 + 1], pos[A * 3 + 2], pos[B * 3], pos[B * 3 + 1], pos[B * 3 + 2]);
+    secs.forEach((_, a) => { for (let j = 0; j < M; j++) ln(a * M + j, a * M + ((j + 1) % M)); });
+    lines.forEach((i) => { for (let a = 0; a < secs.length - 1; a++) ln(a * M + i, (a + 1) * M + i); });
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute("color", new THREE.Float32BufferAttribute(rgb, 3));
+    g.setIndex(idx); g.computeVertexNormals();
+    return { geo: g, seg: new Float32Array(out) };
+  }
+
   /* ---------- scene: four-engine double-deck airliner (1 unit = 1 m) ---------- */
   function buildPlane() {
-    const P = [];
-    const FUS = 0xedf2f4, WING = 0xdce5ec, ENG = 0xc9d6e0, GLASS = 0x2c4468, GEAR = 0x4a5a70, TIRE = 0x1f2b3d, ACC = 0xd3541f;
+    TEXBY.clear(); GLOSSY.clear();
+    const P = [], WHITE = 0xf2f5f7, GLASS = 0x1e2c44, GEAR = 0x8b95a1, TIRE = 0x15181d, BLUE = 0x1d3f7a, ENGW = 0xe9edf0, SKIN = 0xe6ebef;
+    GLOSSY.add(GLASS);
     const rotX = [0, 0, -Math.PI / 2];
+    const FUSC = [[0.05, -36.6], [0.55, -35.2], [1.35, -31.5], [2.35, -26.5], [3.15, -20], [3.5, -12], [3.55, -3],
+      [3.55, 12], [3.5, 21], [3.28, 26.5], [2.8, 30.5], [2.1, 33.6], [1.1, 35.6], [0.05, 36.6]];
+    const UPC = [[0.08, -13], [1.4, -9], [2.2, -3], [2.6, 4], [2.6, 14], [2.3, 19], [1.5, 22.5], [0.6, 24.5], [0.05, 25.5]];
+    const FR = (x) => lerpAt(FUSC.map((p) => [p[1], p[0]]), x), UR = (x) => lerpAt(UPC.map((p) => [p[1], p[0]]), x - 4);
 
-    // Fuselage: long lofted body, taller than wide for the double-deck cross-section.
-    P.push(lathePart("Fuselage",
-      [[0.05, -36.6], [0.55, -35.2], [1.35, -31.5], [2.35, -26.5], [3.15, -20], [3.5, -12], [3.55, -3],
-       [3.55, 12], [3.5, 21], [3.28, 26.5], [2.8, 30.5], [2.1, 33.6], [1.1, 35.6], [0.05, 36.6]],
-      FUS, { rot: rotX, scl: [1.18, 1, 1], long: 16 }));
-    P.push(lathePart("Upper deck",
-      [[0.08, -13], [1.4, -9], [2.2, -3], [2.6, 4], [2.6, 14], [2.3, 19], [1.5, 22.5], [0.6, 24.5], [0.05, 25.5]],
-      FUS, { rot: rotX, pos: [4, 3.05, 0], scl: [0.78, 1, 1], long: 12 }));
-
-    // Window rows follow the cabin: two decks, both sides, as one merged part each.
-    const lower = [], upper = [];
-    for (let x = -15; x <= 20.5; x += 1.55) [-1, 1].forEach((s) => lower.push([x, 0.55, s * 3.56, 0.62, 0.78, 0]));
-    for (let x = -7; x <= 18.5; x += 1.5) [-1, 1].forEach((s) => upper.push([x, 3.1, s * 2.66, 0.55, 0.7, 0]));
-    const lw = quadBatch(lower), uw = quadBatch(upper);
-    P.push(mk("Cabin windows, main deck", lw.geo, GLASS, { seg: () => lw.seg, max: 0.96 }));
-    P.push(mk("Cabin windows, upper deck", uw.geo, GLASS, { seg: () => uw.seg, max: 0.96 }));
-
-    // Swept wing with a crank. Planform [x, z], right side; mirrored for the left.
-    const LE = [[2.6, 7], [14.5, -1], [40, -17.5]];
-    const TE = [[2.6, -8], [14.5, -13.5], [40, -21.5]];
-    const WY = -2.2;
-    const leAt = (z) => lerpAt(LE, Math.abs(z));
-    const teAt = (z) => lerpAt(TE, Math.abs(z));
-    const DIH = 0.075;
-    [1, -1].forEach((s) => {
-      const poly = [[7, 2.6], [-1, 14.5], [-17.5, 40], [-21.5, 40], [-13.5, 14.5], [-8, 2.6]].map((p) => [p[0], s * p[1]]);
-      const ribs = [];
-      for (let z = 5; z < 39; z += 3.2) {
-        const zz = s * z;
-        ribs.push(leAt(z), 0, zz, teAt(z), 0, zz);
+    // Fuselage: painted belly, cheatline and cockpit glass, dense enough to hold the livery.
+    P.push(lathePart("Fuselage", FUSC, 0xffffff, {
+      rot: rotX, scl: [1.18, 1, 1], long: 16, segs: 96, res: 110, r: 0.35,
+      paint: (x, y, z) => {
+        const yw = -x * 1.18, r = Math.hypot(x, z);
+        if (y > 31.4 && y < 34.4 && yw > 0.5 && Math.abs(z) < r * 0.8) return GLASS;
+        if (yw < -2.3) return 0xa7b2be;
+        if (yw < -0.1 && yw > -0.8 && y > -27 && y < 30) return BLUE;
+        return WHITE;
       }
-      // front spar, rear spar and flap line
-      [0.18, 0.62, 0.78].forEach((f) => {
-        for (let z = 2.6; z < 39.5; z += 6.1) {
-          const z2 = Math.min(40, z + 6.1);
-          ribs.push(
-            leAt(z) + (teAt(z) - leAt(z)) * f, 0, s * z,
-            leAt(z2) + (teAt(z2) - leAt(z2)) * f, 0, s * z2);
-        }
-      });
-      P.push(mk(s > 0 ? "Wing, starboard" : "Wing, port", planform(poly, 0.55), WING, {
-        rot: [Math.PI / 2 - s * DIH, 0, 0], pos: [0, WY, 0], extra: new Float32Array(ribs)
-      }));
-      P.push(mk(s > 0 ? "Wingtip fence, starboard" : "Wingtip fence, port",
-        extrude(polyShape([[-17.4, 0], [-21.5, 0], [-21.9, 2.1], [-19.6, 2.1]]), 0.12), WING,
-        { pos: [0, WY + 40 * Math.sin(DIH) + 0.1, s * 40 - 0.06] }));
-    });
+    }));
+    P.push(lathePart("Upper deck", UPC, WHITE, { rot: rotX, pos: [4, 3.05, 0], scl: [0.78, 1, 1], long: 12, segs: 64, res: 60, r: 0.35 }));
 
-    // Four engines, hung below and ahead of the wing.
+    // Oval windows hugging the hull on both decks.
+    const lower = [], upper = [];
+    for (let x = -15; x <= 20.5; x += 1.55) [-1, 1].forEach((s) => {
+      const r = FR(x), cz = r * Math.sqrt(1 - Math.pow(0.55 / (1.18 * r), 2)) + 0.03;
+      lower.push([x, 0.55, s * cz, 0.6, 0.78]);
+    });
+    for (let x = -7; x <= 18.5; x += 1.5) [-1, 1].forEach((s) => upper.push([x, 3.1, s * (UR(x) + 0.03), 0.52, 0.68]));
+    const lw = ovals(lower), uw = ovals(upper);
+    P.push(mk("Cabin windows, main deck", lw.geo, GLASS, { seg: () => lw.seg, max: 0.97 }));
+    P.push(mk("Cabin windows, upper deck", uw.geo, GLASS, { seg: () => uw.seg, max: 0.97 }));
+
+    // Swept, cranked wing lofted from airfoil sections, with real thickness and dihedral.
+    const LE = [[2.6, 7], [14.5, -1], [40, -17.5]], TE = [[2.6, -8], [14.5, -13.5], [40, -21.5]];
+    const WY = -2.2, DIH = 0.075;
+    const leAt = (z) => lerpAt(LE, Math.abs(z)), teAt = (z) => lerpAt(TE, Math.abs(z)), wy = (z) => WY + Math.abs(z) * Math.sin(DIH);
+    [1, -1].forEach((s) => {
+      const side = s > 0 ? "starboard" : "port";
+      const secs = [2.6, 8, 14.5, 22, 30, 36, 40].map((z) => ({
+        le: [leAt(z), wy(z), s * z], te: [teAt(z), wy(z), s * z], t: (leAt(z) - teAt(z)) * (0.13 - 0.045 * z / 40), up: [0, 1, 0]
+      }));
+      const w = loft(secs, (x, y, z, sg) => (sg > 0 ? SKIN : 0xaeb8c3), [0, 2, 5, 9, 12, 14]);
+      P.push(mk("Wing, " + side, w.geo, 0xffffff, { vc: true, seg: () => w.seg, r: 0.5 }));
+      P.push(mk("Wingtip fence, " + side, extrude(polyShape([[-17.4, 0], [-21.5, 0], [-21.9, 2.1], [-19.6, 2.1]]), 0.12), SKIN,
+        { pos: [0, wy(40) + 0.1, s * 40 - 0.06], r: 0.5 }));
+    });
+    P.push(mk("Wing-body fairing", new THREE.SphereGeometry(1, 28, 14), 0xa7b2be, { pos: [-0.5, -3.7, 0], scl: [11, 1.4, 3.0], seg: () => new Float32Array(0), r: 0.5 }));
+    [[1, 0x35ff7a], [-1, 0xff3b30]].forEach(([s, c]) => P.push(mk("Wingtip light", new THREE.SphereGeometry(0.2, 10, 8), c, { pos: [-19.8, wy(40) + 0.15, s * 40.1], em: c, angle: 70 })));
+
+    // Four high-bypass engines: nacelle, inlet lip, fan with blades, spinner, core plug, pylon.
     [[12.2, 1], [25.5, 2]].forEach(([z0, n]) => [-1, 1].forEach((s) => {
-      const z = s * z0, ex = leAt(z0) - 0.4, ey = WY + z0 * Math.sin(DIH) - 3.2;
+      const z = s * z0, ex = leAt(z0) - 0.4, ey = wy(z0) - 3.2;
       const tag = (s > 0 ? "starboard " : "port ") + (n === 1 ? "inner" : "outer");
-      P.push(lathePart("Nacelle, " + tag,
-        [[0.55, -3.9], [1.05, -3.2], [1.5, -1.6], [1.62, 0.2], [1.58, 2.2], [1.7, 3.5]],
-        ENG, { rot: rotX, pos: [ex, ey, z], long: 10 }));
-      P.push(mk("Fan face, " + tag, new THREE.CylinderGeometry(1.42, 1.42, 0.12, 24), GLASS,
-        { rot: [0, 0, -Math.PI / 2], pos: [ex + 3.52, ey, z], max: 0.97, angle: 50 }));
-      P.push(lathePart("Spinner, " + tag, [[0.5, 0], [0.38, 0.4], [0.02, 0.85]], 0x8fa3bd,
-        { rot: rotX, pos: [ex + 3.5, ey, z], long: 6, max: 0.97 }));
-      P.push(mk("Pylon, " + tag, extrude(polyShape([[-2.8, 0], [1.6, 0], [0.6, 2.2], [-2.4, 2.2]]), 0.4), WING,
-        { rot: [0, 0, 0], pos: [ex, ey + 1.1, z - 0.2], scl: [1, 0.92, 1] }));
+      P.push(lathePart("Nacelle, " + tag, [[0.55, -3.9], [1.05, -3.2], [1.5, -1.6], [1.62, 0.2], [1.58, 2.2], [1.7, 3.5]],
+        ENGW, { rot: rotX, pos: [ex, ey, z], long: 10, segs: 40, r: 0.45 }));
+      P.push(lathePart("Core plug, " + tag, [[0.5, 0], [0.36, -0.6], [0.03, -1.6]], 0x3b414a, { rot: rotX, pos: [ex - 3.9, ey, z], long: 6, r: 0.6 }));
+      P.push(mk("Inlet lip, " + tag, new THREE.TorusGeometry(1.62, 0.12, 8, 32), 0xbfc7d0, { rot: [0, Math.PI / 2, 0], pos: [ex + 3.5, ey, z], m: 0.6, r: 0.25, angle: 60 }));
+      const sp = [];
+      for (let k = 0; k < 16; k++) { const a = (k / 16) * 6.2832; sp.push(ex + 3.6, ey, z, ex + 3.6, ey + Math.cos(a) * 1.4, z + Math.sin(a) * 1.4); }
+      P.push(mk("Fan face, " + tag, new THREE.CylinderGeometry(1.42, 1.42, 0.12, 28), 0x161c27,
+        { rot: [0, 0, -Math.PI / 2], pos: [ex + 3.52, ey, z], max: 0.98, angle: 50, extra: new Float32Array(sp), r: 0.4 }));
+      P.push(lathePart("Spinner, " + tag, [[0.5, 0], [0.38, 0.4], [0.02, 0.85]], 0xcfd6de, { rot: rotX, pos: [ex + 3.5, ey, z], long: 6, max: 0.98, m: 0.7, r: 0.25 }));
+      P.push(mk("Pylon, " + tag, extrude(polyShape([[-2.8, 0], [1.6, 0], [0.6, 2.2], [-2.4, 2.2]]), 0.4), ENGW,
+        { pos: [ex, ey + 1.1, z - 0.2], scl: [1, 0.92, 1], r: 0.5 }));
     }));
 
-    // Tailplane and fin.
+    // Tail: lofted tailplanes and a lofted fin in the livery blue.
+    const leS = (z) => -24.5 - 7.9 * (z - 1) / 14.4, teS = (z) => -34.2 - 1.4 * (z - 1) / 14.4;
     [1, -1].forEach((s) => {
-      const poly = [[-24.5, 1.0], [-32.4, 15.4], [-35.6, 15.4], [-34.2, 1.0]].map((p) => [p[0], s * p[1]]);
-      P.push(mk(s > 0 ? "Horizontal stabilizer, starboard" : "Horizontal stabilizer, port", planform(poly, 0.3), WING,
-        { rot: [Math.PI / 2 - s * 0.1, 0, 0], pos: [0, 1.4, 0] }));
+      const secs = [1, 5, 9.5, 15.4].map((z) => ({ le: [leS(z), 1.4 + z * 0.1, s * z], te: [teS(z), 1.4 + z * 0.1, s * z], t: (leS(z) - teS(z)) * 0.09, up: [0, 1, 0] }));
+      const h = loft(secs, (x, y, z, sg) => (sg > 0 ? SKIN : 0xaeb8c3), [0, 10, 14]);
+      P.push(mk(s > 0 ? "Horizontal stabilizer, starboard" : "Horizontal stabilizer, port", h.geo, 0xffffff, { vc: true, seg: () => h.seg, r: 0.5 }));
     });
-    const fin = [[-15, 3.7], [-28, 15.9], [-34, 15.9], [-36.2, 1.2], [-24, 1.8]];
-    const rud = [];
-    for (let k = 0; k < 6; k++) {
-      const pt = (y) => {
-        const f = (y - 1.2) / 14.7, tx = -36.2 + 2.2 * f;
-        const lx = y <= 3.7 ? -15 : -15 + (-13) * ((y - 3.7) / 12.2);
-        return tx + (lx - tx) * 0.26;
-      };
-      const y0 = 2.6 + (13.3 * k) / 6, y1 = 2.6 + (13.3 * (k + 1)) / 6;
-      rud.push(pt(y0), y0, 0.2, pt(y1), y1, 0.2);
-    }
-    P.push(mk("Vertical fin", extrude(polyShape(fin), 0.3), ACC, { pos: [0, 0, -0.15], extra: new Float32Array(rud) }));
+    const finX = (y) => (y <= 3.7 ? -15 : -15 - 13 * ((y - 3.7) / 12.2)), finT = (y) => -36.2 + 2.2 * ((y - 1.2) / 14.7);
+    const fs = [2, 5, 8.5, 12, 15.9].map((y) => ({ le: [finX(y), y, 0], te: [finT(y), y, 0], t: (finX(y) - finT(y)) * 0.1, up: [0, 0, 1] }));
+    const fin = loft(fs, () => BLUE, [0, 10, 14]);
+    P.push(mk("Vertical fin", fin.geo, 0xffffff, { vc: true, seg: () => fin.seg, r: 0.4 }));
 
-    // Landing gear: nose leg, two body legs, two wing legs. Each wheel is its own solid.
+    // Landing gear: struts with pistons, bogie beams, tyres and hubs.
     const gearY = -8.3;
-    const leg = (name, x, y0, z, nWheelRows, rowGap, wheelR) => {
-      const h = y0 - (gearY + wheelR);
-      P.push(mk(name + " strut", new THREE.CylinderGeometry(0.2, 0.26, h, 10), GEAR, { pos: [x, y0 - h / 2, z], angle: 60 }));
-      for (let r = 0; r < nWheelRows; r++) {
-        const xx = x + (r - (nWheelRows - 1) / 2) * rowGap;
-        [-1, 1].forEach((k) => P.push(mk(name + " wheel", new THREE.CylinderGeometry(wheelR, wheelR, 0.42, 18), TIRE,
-          { rot: [Math.PI / 2, 0, 0], pos: [xx, gearY + wheelR, z + k * 0.46], angle: 40 })));
+    const leg = (name, x, y0, z, rows, gap, R) => {
+      const h = y0 - (gearY + R);
+      P.push(mk(name + " strut", new THREE.CylinderGeometry(0.2, 0.26, h, 12), GEAR, { pos: [x, y0 - h / 2, z], angle: 60, m: 0.6, r: 0.35 }));
+      P.push(mk(name + " piston", new THREE.CylinderGeometry(0.14, 0.14, h * 0.45, 10), 0xd5dbe2, { pos: [x, gearY + R + h * 0.25, z], angle: 60, m: 0.8, r: 0.2 }));
+      if (rows > 1) P.push(mk(name + " bogie beam", new THREE.BoxGeometry(gap * (rows - 1) + 0.3, 0.26, 0.3), GEAR, { pos: [x, gearY + R, z], m: 0.5 }));
+      for (let r = 0; r < rows; r++) {
+        const xx = x + (r - (rows - 1) / 2) * gap;
+        [-1, 1].forEach((k) => {
+          const at = [xx, gearY + R, z + k * 0.46];
+          P.push(mk(name + " wheel", new THREE.CylinderGeometry(R, R, 0.42, 22), TIRE, { rot: [Math.PI / 2, 0, 0], pos: at, angle: 40, r: 0.9 }));
+          P.push(mk(name + " hub", new THREE.CylinderGeometry(R * 0.5, R * 0.5, 0.46, 14), 0xc4ccd5, { rot: [Math.PI / 2, 0, 0], pos: at, angle: 40, m: 0.7, r: 0.3 }));
+        });
       }
     };
     leg("Nose gear", 27, -3.4, 0, 1, 0, 0.62);
     [-1, 1].forEach((s) => leg("Body gear " + (s > 0 ? "starboard" : "port"), -7, -3.6, s * 2.4, 2, 1.7, 0.78));
     [-1, 1].forEach((s) => leg("Wing gear " + (s > 0 ? "starboard" : "port"), -2.5, -2.6, s * 8.6, 2, 1.7, 0.78));
+
+    // Apron: soft contact shadow and the yellow lead-in line. Not part of the envelope.
+    P.push(mk("Apron shadow", new THREE.PlaneGeometry(90, 40), 0x000000, { rot: [-Math.PI / 2, 0, 0], pos: [-2, -8.29, 0], dress: true, map: BLOB, tex: null, max: 0.5, r: 1 }));
+    P.push(mk("Taxi line", new THREE.PlaneGeometry(95, 0.4), 0xf2c230, { rot: [-Math.PI / 2, 0, 0], pos: [10, -8.28, 0], dress: true, r: 0.9, max: 0.9 }));
 
     return {
       parts: P,
@@ -278,13 +385,28 @@ function boot() {
   /* ---------- scene: two-storey house with garage, porch and dormer (1 unit = 1 m) ---------- */
   function buildHouse() {
     const W = 12, D = 8, H = 5.6, R = 3.2, t = 0.28, P = [];
-    const WALL = 0xedf2f4, TRIM = 0xf8fafc, ROOF = 0xa83e15, ROOFD = 0x8c3411, GLASS = 0x5b7ba8, BRICK = 0x9a4a26, SLAB = 0xb6c4d4, DOOR = 0xd3541f, GDOOR = 0xdce5ec;
+    TEXBY.clear(); GLOSSY.clear();
+    const WALL = 0xe1d9c6, TRIM = 0xf7f5f0, ROOF = 0x4b4f57, ROOFD = 0x363a41, GLASS = 0x6c93bd, BRICK = 0xb0583d, SLAB = 0xbab7af, DOOR = 0x8a2f25,
+      GDOOR = 0xe8e5de, CONC = 0xa9a7a1, GRASS = 0x4f8a3c, LEAF = 0x3f7d3a, SHUT = 0x2f4a3a;
+    GLOSSY.add(GLASS);
+    const grey = (g, v) => { g.fillStyle = "rgb(" + v + "," + v + "," + v + ")"; };
+    const tSid = mkTex(64, 128, (g, w) => { for (let i = 0; i < 8; i++) { const y = i * 16; grey(g, 232 + Math.floor(rnd() * 20)); g.fillRect(0, y, w, 16); g.fillStyle = "rgba(0,0,0,.28)"; g.fillRect(0, y + 13, w, 3); g.fillStyle = "rgba(255,255,255,.5)"; g.fillRect(0, y, w, 1); } });
+    const tShi = mkTex(128, 128, (g, w, h) => { g.fillStyle = "#777"; g.fillRect(0, 0, w, h); for (let r = 0; r < 4; r++) for (let c = -1; c < 4; c++) { const x = c * 32 + (r % 2) * 16; grey(g, 190 + Math.floor(rnd() * 60)); g.fillRect(x + 1, r * 32 + 1, 30, 29); g.fillStyle = "rgba(0,0,0,.35)"; g.fillRect(x, r * 32 + 29, 32, 3); } });
+    const tBrk = mkTex(128, 64, (g, w, h) => { grey(g, 185); g.fillRect(0, 0, w, h); for (let r = 0; r < 4; r++) for (let c = -1; c < 4; c++) { grey(g, 205 + Math.floor(rnd() * 50)); g.fillRect(c * 32 + (r % 2) * 16 + 1, r * 16 + 1, 30, 14); } });
+    const tCon = mkTex(128, 128, (g, w, h) => { grey(g, 240); g.fillRect(0, 0, w, h); for (let i = 0; i < 260; i++) { grey(g, 205 + Math.floor(rnd() * 40)); g.fillRect(rnd() * w, rnd() * h, 2, 2); } g.strokeStyle = "rgba(0,0,0,.4)"; g.lineWidth = 3; g.strokeRect(0, 0, w, h); });
+    const tGrs = mkTex(256, 256, (g, w, h) => { grey(g, 235); g.fillRect(0, 0, w, h); for (let i = 0; i < 2600; i++) { grey(g, 170 + Math.floor(rnd() * 85)); g.fillRect(rnd() * w, rnd() * h, 2, 5); } });
+    TEXBY.set(WALL, { t: tSid, w: 0.6, h: 1.2, bump: 1 });
+    TEXBY.set(ROOF, { t: tShi, w: 1.0, h: 0.6, bump: 1 });
+    TEXBY.set(BRICK, { t: tBrk, w: 0.86, h: 0.26, bump: 1 });
+    TEXBY.set(SLAB, { t: tCon, w: 3, h: 3 });
+    TEXBY.set(CONC, { t: tCon, w: 3, h: 3 });
+    TEXBY.set(GRASS, { t: tGrs, w: 2.5, h: 2.5 });
 
     // Foundations, driveway, walk.
     P.push(mk("Foundation slab, main", new THREE.BoxGeometry(W + 0.7, 0.34, D + 0.7), SLAB, { pos: [0, -0.17, 0] }));
     P.push(mk("Foundation slab, garage", new THREE.BoxGeometry(6.9, 0.34, 8.6), SLAB, { pos: [9.45, -0.17, 0.8] }));
-    P.push(mk("Driveway", new THREE.BoxGeometry(5.6, 0.08, 7.2), 0xc8d2de, { pos: [9.3, -0.04, 8.8] }));
-    P.push(mk("Front walk", new THREE.BoxGeometry(1.5, 0.08, 4.6), 0xc8d2de, { pos: [-3, -0.04, 9.7] }));
+    P.push(mk("Driveway", new THREE.BoxGeometry(5.6, 0.08, 7.2), CONC, { pos: [9.3, -0.04, 8.8] }));
+    P.push(mk("Front walk", new THREE.BoxGeometry(1.5, 0.08, 4.6), CONC, { pos: [-3, -0.04, 9.7] }));
 
     // Main walls. Holes are cut where windows and doors sit.
     const front = polyShape(rectPts(-W / 2, 0, W / 2, H));
@@ -426,6 +548,44 @@ function boot() {
     P.push(mk("Garage door header", new THREE.BoxGeometry(5.1, 0.18, 0.12), TRIM, { pos: [gdx, 2.5, gz1 + 0.02] }));
     side("Garage side window", 2.0, 3.0, 1.1, 2.0, gx1, 1);
 
+    // Site dressing: lawn, soft contact shadow, hedges and trees. Left out of the envelope.
+    P.push(mk("Lawn", new THREE.PlaneGeometry(27, 24), GRASS, { rot: [-Math.PI / 2, 0, 0], pos: [3.3, -0.07, 2.2], dress: true, r: 1 }));
+    P.push(mk("Ground shadow", new THREE.PlaneGeometry(24, 16), 0x000000, { rot: [-Math.PI / 2, 0, 0], pos: [3.4, -0.06, 0.8], dress: true, map: BLOB, tex: null, max: 0.5, r: 1 }));
+    [0.9, 2.0, 3.1, 4.2, 5.3].forEach((x, i) => P.push(mk("Hedge " + (i + 1), new THREE.SphereGeometry(0.55, 12, 9), LEAF,
+      { pos: [x, 0.45, D / 2 + 0.75], scl: [1.1, 0.85, 0.9], dress: true, flat: true, r: 1 })));
+    const tree = (i, x, z, h) => {
+      P.push(mk("Tree trunk " + i, new THREE.CylinderGeometry(0.16, 0.26, h * 0.5, 8), 0x5b3f2c, { pos: [x, h * 0.25, z], dress: true, r: 1 }));
+      [[0, 0.7, 0, 0.3], [0.22, 0.55, 0.1, 0.2], [-0.2, 0.58, -0.1, 0.22]].forEach((b, j) =>
+        P.push(mk("Tree crown " + i + "." + j, new THREE.IcosahedronGeometry(h * b[3], 1), LEAF,
+          { pos: [x + b[0] * h, b[1] * h, z + b[2] * h], dress: true, flat: true, r: 1 })));
+    };
+    tree(1, -8.2, 4.8, 7);
+    tree(2, 15.4, -5.2, 8.5);
+
+    // Brick water table, shutters, porch railing, lamps, downspouts and roof vents.
+    P.push(mk("Brick water table", boxes([
+      [-5.25, 0.25, D / 2 + 0.07, 1.7, 0.5, 0.14], [2.25, 0.25, D / 2 + 0.07, 7.7, 0.5, 0.14],
+      [-4.0, 0.25, -D / 2 - 0.07, 4.2, 0.5, 0.14], [3.5, 0.25, -D / 2 - 0.07, 5.2, 0.5, 0.14],
+      [-W / 2 - 0.07, 0.25, 0, 0.14, 0.5, D]]), BRICK, {}));
+    const sh = [];
+    [[-5.2, -3.6], [-2.2, -0.6], [0.9, 2.5], [3.9, 5.5]].forEach(([a, b]) => [a - 0.3, b + 0.3].forEach((x) => sh.push([x, 4.6, zF + 0.09, 0.3, 1.3, 0.07])));
+    P.push(mk("Window shutters", boxes(sh), SHUT, {}));
+    const rl = [];
+    [[-5.35, -4.2], [-1.8, -0.65]].forEach(([a, b]) => {
+      rl.push([(a + b) / 2, 1.05, 6.35, b - a, 0.08, 0.1], [(a + b) / 2, 0.4, 6.35, b - a, 0.06, 0.08]);
+      for (let x = a + 0.1; x < b; x += 0.16) rl.push([x, 0.72, 6.35, 0.04, 0.62, 0.04]);
+    });
+    [-5.35, -0.65].forEach((x) => {
+      rl.push([x, 1.05, 5.2, 0.1, 0.08, 2.3]);
+      for (let z = 4.3; z < 6.2; z += 0.16) rl.push([x, 0.72, z, 0.04, 0.62, 0.04]);
+    });
+    P.push(mk("Porch railing", boxes(rl), TRIM, {}));
+    P.push(mk("Exterior lamps", boxes([[-4.62, 1.95, zF + 0.1], [-1.38, 1.95, zF + 0.1], [6.55, 2.2, gz1 + 0.1], [12.05, 2.2, gz1 + 0.1]]
+      .map((p) => [p[0], p[1], p[2], 0.14, 0.26, 0.12])), 0x25272b, { em: 0xffc477 }));
+    [[-W / 2 - 0.16, D / 2 + 0.1], [-W / 2 - 0.16, -D / 2 - 0.1], [W / 2 + 0.16, -D / 2 - 0.1]].forEach((p, i) =>
+      P.push(mk("Downspout " + (i + 1), new THREE.CylinderGeometry(0.05, 0.05, H - 0.4, 8), TRIM, { pos: [p[0], (H - 0.4) / 2 + 0.1, p[1]], angle: 60 })));
+    [-4.2, 2.2].forEach((x, i) => P.push(mk("Roof vent " + (i + 1), new THREE.CylinderGeometry(0.07, 0.09, 0.5, 8), 0x1f2226, { pos: [x, 7.45, -1.9], angle: 60 })));
+
     return {
       parts: P,
       gridStep: 1,
@@ -452,7 +612,7 @@ function boot() {
       prompt: "Four-bedroom two-storey house, double garage, covered porch",
       alt: "A two-storey house with garage and porch drawn as a blueprint line by line, then turning into a solid 3D model",
       envelope: "width × depth × height",
-      cam: { from: { az: 0.0, el: 0.05 }, to: { az: 0.5, el: 0.27 } }
+      cam: { from: { az: 0.0, el: 0.05 }, to: { az: 0.52, el: 0.3 } }
     }
   ];
 
@@ -470,6 +630,7 @@ function boot() {
     structN: 0, dimN: 0, lines: null, dimLines: null, grid: null, group: null, promptText: ""
   };
 
+  const envBox = () => { const b = new THREE.Box3(); S.group.children.forEach((m) => { if (!m.userData.dress) b.expandByObject(m); }); return b; };
   const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
   const lerp = (a, b, k) => a + (b - a) * k;
   const easeIO = (k) => 0.5 - 0.5 * Math.cos(Math.PI * k);
@@ -504,7 +665,7 @@ function boot() {
     built.parts.forEach((p) => S.group.add(p.mesh));
     scene.add(S.group);
     S.group.updateMatrixWorld(true);
-    const box = new THREE.Box3().setFromObject(S.group);
+    const box = envBox();
     const dimArr = built.dims(box);
     const full = box.clone();
     for (let k = 0; k < dimArr.length; k += 3) full.expandByPoint(new THREE.Vector3(dimArr[k], dimArr[k + 1], dimArr[k + 2]));
@@ -530,7 +691,7 @@ function boot() {
     scene.add(S.grid);
 
     S.promptText = def.prompt;
-    if (el.parts) el.parts.textContent = built.parts.length + " parts";
+    if (el.parts) el.parts.textContent = built.parts.filter((p) => !p.dress).length + " parts";
     if (el.size) el.size.textContent = size.x.toFixed(1) + " × " + size.z.toFixed(1) + " × " + size.y.toFixed(1) + " m";
     if (el.sizeLabel) el.sizeLabel.textContent = "Envelope, " + def.envelope;
     host.setAttribute("role", "img");
@@ -567,11 +728,13 @@ function boot() {
     const solid = easeIO(clamp((t - 3.6) / 1.1, 0, 1)) * k;
     S.group.traverse((n) => {
       if (!n.isMesh) return;
-      n.material.opacity = n.material.userData.max * solid;
+      const m = n.material, mx = m.userData.max, tr = !(mx >= 1 && solid > 0.999);
+      m.opacity = mx * solid;
+      if (m.transparent !== tr) { m.transparent = tr; m.needsUpdate = true; }
       n.visible = solid > 0.01;
     });
     S.lines.material.color.setHex(COL.line).lerp(new THREE.Color(COL.lineSolid), solid);
-    S.lines.material.opacity = Math.max(0.35, 1 - solid * 0.2);
+    S.lines.material.opacity = Math.max(0.3, 1 - solid * 0.7);
     S.grid.material.opacity = 0.2 * clamp(t / 0.8, 0, 1) * k;
 
     const u = easeCubic(clamp((t - 0.8) / 4.6, 0, 1));
@@ -602,7 +765,7 @@ function boot() {
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
     if (S.cur && S.group) {
-      const box = new THREE.Box3().setFromObject(S.group);
+      const box = envBox();
       fitDistance(box.getBoundingSphere(new THREE.Sphere()).radius * 1.18);
     }
   }
@@ -616,6 +779,7 @@ function boot() {
     try {
       dockR = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "low-power" });
       dockR.setClearColor(0x000000, 0);
+      dockR.toneMapping = THREE.ACESFilmicToneMapping; dockR.toneMappingExposure = 1.15;
       dockR.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
       dockR.setSize(dockHost.clientWidth || 168, dockHost.clientHeight || 168, false);
       dockR.domElement.style.cssText = "width:100%;height:100%;display:block";
