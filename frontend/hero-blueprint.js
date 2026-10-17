@@ -67,6 +67,8 @@ function boot() {
     new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: false, steps: 1 });
 
   const mat = (color, max = 1, o = {}) => {
+    const key = o._share ? [color, max, o.r, o.m, o.em, o.flat].join("|") : null;
+    if (key && MATC.has(key)) return MATC.get(key);
     const gl = GLOSSY.has(color);
     const m = new THREE.MeshStandardMaterial({
       color, side: THREE.DoubleSide, transparent: true, opacity: 0,
@@ -76,13 +78,15 @@ function boot() {
     });
     m.envMapIntensity = gl ? 1.6 : 1;
     m.userData.max = max;
+    if (key) MATC.set(key, m);
     return m;
   };
 
   function mk(name, geo, color, o = {}) {
     if (o.paint) paintGeo(geo, o.paint);
     const T = o.tex === undefined ? TEXBY.get(color) : o.tex;
-    const mesh = new THREE.Mesh(geo, mat(color, o.max == null ? 1 : o.max, o));
+    const mesh = new THREE.Mesh(geo, mat(color, o.max == null ? 1 : o.max, Object.assign({}, o, { _share: !(T || o.paint || o.vc || o.map || o.anim) })));
+    if (o.anim) mesh.userData.anim = o.anim;
     if (T) {
       const pr = geo.parameters, bx = pr && pr.width != null, m = mesh.material;
       m.map = rep(T.t, bx ? Math.max(pr.width, pr.depth || 0) / T.w : 1 / T.w, bx ? Math.max(pr.height, pr.depth || 0) / T.h : 1 / T.h);
@@ -176,7 +180,7 @@ function boot() {
   }
 
   /* ---------- realism helpers: textures, painted vertices, lofted airfoils, merged boxes ---------- */
-  const TEXBY = new Map(), GLOSSY = new Set();
+  const TEXBY = new Map(), GLOSSY = new Set(), MATC = new Map();
   const rnd = (() => { let s = 11; return () => (s = (s * 16807) % 2147483647) / 2147483647; })();
   const mkTex = (w, h, draw) => {
     const c = document.createElement("canvas"); c.width = w; c.height = h; draw(c.getContext("2d"), w, h);
@@ -264,6 +268,18 @@ function boot() {
     return { geo: g, seg: new Float32Array(out) };
   }
 
+  function fanGeo() {
+    const pos = [], idx = [];
+    for (let k = 0; k < 18; k++) {
+      const a = k * 6.2832 / 18, b = pos.length / 3;
+      [[0.25, a - 0.06], [0.25, a + 0.06], [1.38, a + 0.18], [1.38, a + 0.04]].forEach(([r, q]) => pos.push(0, r * Math.cos(q), r * Math.sin(q)));
+      idx.push(b, b + 1, b + 2, b, b + 2, b + 3);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals();
+    return g;
+  }
+
   /* ---------- scene: four-engine double-deck airliner (1 unit = 1 m) ---------- */
   function buildPlane(cut) {
     TEXBY.clear(); GLOSSY.clear();
@@ -289,15 +305,20 @@ function boot() {
     P.push(lathePart("Upper deck", UPC, WHITE, { rot: rotX, pos: [4, 3.05, 0], scl: [0.78, 1, 1], long: 12, segs: 64, res: 60, r: 0.35 }));
 
     // Oval windows hugging the hull on both decks.
+    const DX = [22.6, 10.0, -1.5, -10.5, -17.6], nearDoor = (x) => DX.some((d) => Math.abs(x - d) < 0.95);
     const lower = [], upper = [];
     for (let x = -15; x <= 20.5; x += 1.55) [-1, 1].forEach((s) => {
       const r = FR(x), cz = r * Math.sqrt(1 - Math.pow(0.55 / (1.18 * r), 2)) + 0.03;
-      lower.push([x, 0.55, s * cz, 0.6, 0.78]);
+      nearDoor(x) || (cut && s > 0 && x > -11 && x < 15) || lower.push([x, 0.55, s * cz, 0.6, 0.78]);
     });
-    for (let x = -7; x <= 18.5; x += 1.5) [-1, 1].forEach((s) => (cut && x > -11 && x < 15) || upper.push([x, 3.1, s * (UR(x) + 0.03), 0.52, 0.68]));
-    const lw = ovals(lower), uw = ovals(upper);
-    P.push(mk("Cabin windows, main deck", lw.geo, GLASS, { seg: () => lw.seg, max: 0.97 }));
-    P.push(mk("Cabin windows, upper deck", uw.geo, GLASS, { seg: () => uw.seg, max: 0.97 }));
+    for (let x = -7; x <= 18.5; x += 1.5) [-1, 1].forEach((s) => (cut && s > 0 && x > -11 && x < 15) || upper.push([x, 3.1, s * (UR(x) + 0.03), 0.52, 0.68]));
+    const win1 = (nm, w, i) => {
+      const o1 = ovals([[w[0], w[1], w[2], w[3] + 0.16, w[4] + 0.16]]), o2 = ovals([[w[0], w[1], w[2] + (w[2] > 0 ? 0.015 : -0.015), w[3], w[4]]]);
+      P.push(mk(nm + " frame " + i, o1.geo, 0xc9d1da, { seg: () => o1.seg, r: 0.5 }));
+      P.push(mk(nm + " " + i, o2.geo, GLASS, { seg: () => o2.seg, max: 0.97, em: 0x6a5530 }));
+    };
+    lower.forEach((w, i) => win1("Window", w, i + 1));
+    upper.forEach((w, i) => win1("Upper window", w, i + 1));
 
     // Swept, cranked wing lofted from airfoil sections, with real thickness and dihedral.
     const LE = [[2.6, 7], [14.5, -1], [40, -17.5]], TE = [[2.6, -8], [14.5, -13.5], [40, -21.5]];
@@ -320,6 +341,59 @@ function boot() {
     P.push(mk("Wing-body fairing", new THREE.SphereGeometry(1, 28, 14), 0xa7b2be, { pos: [-0.5, -3.7, 0], scl: [11, 1.4, 3.0], seg: () => new Float32Array(0), r: 0.5 }));
     [[1, 0x35ff7a], [-1, 0xff3b30]].forEach(([s, c]) => P.push(mk("Wingtip light", new THREE.SphereGeometry(0.2, 10, 8), c, { pos: [-19.8, wy(40) + 0.15, s * 40.1], em: c, angle: 70 })));
 
+    // Hull details: doors, cargo doors, service panels, antennas, probes.
+    const hz = (x, y) => { const r = FR(x), q = 1 - Math.pow(y / (1.18 * r), 2); return r * Math.sqrt(Math.max(0.05, q)); };
+    const hull = (nm, x, y, s, w, h, col, o) => {
+      if (cut && s > 0 && x > -11.5 && x < 15.5) return;
+      P.push(mk(nm, new THREE.BoxGeometry(w, h, 0.1), col, Object.assign({ pos: [x, y, s * (hz(x, y) + 0.01)], r: 0.5, angle: 60 }, o || {})));
+    };
+    DX.forEach((x, i) => [-1, 1].forEach((s) => {
+      const n = (s > 0 ? "S" : "P") + (i + 1);
+      hull("Door " + n, x, 0.45, s, 1.1, 1.9, 0xdde3e9);
+      hull("Door window " + n, x + 0.1, 1.0, s, 0.34, 0.46, GLASS, { max: 0.97 });
+      hull("Door handle " + n, x - 0.35, 0.3, s, 0.16, 0.06, 0x8b95a1, { m: 0.6 });
+    }));
+    const CD = [[17, "Forward", 2.6], [-14, "Aft", 2.6], [-22.5, "Bulk", 1.2]];
+    CD.forEach(([x, nm, w]) => [-1, 1].forEach((s) => hull(nm + " cargo door " + (s > 0 ? "S" : "P"), x, -2.5, s, w, 1.5, 0xb7c0ca)));
+    for (let x = -29, k = 0; x < 31; x += 1.25, k++) [-1, 1].forEach((s) => {
+      if (k % 3 === 0 || (x > -9 && x < 8) || CD.some((c) => Math.abs(x - c[0]) < 2)) return;
+      hull("Hull panel " + k + (s > 0 ? "S" : "P"), x, k % 2 ? -3.0 : -1.8, s, 0.55, 0.36, 0xc2cad3);
+    });
+    [[-20, 3.75], [-12, 4.15], [-27, 2.75], [8, -4.15], [20, -4.15], [-5, -4.15]].forEach(([x, y], i) =>
+      P.push(mk("Antenna blister " + (i + 1), new THREE.SphereGeometry(0.3, 10, 6), 0xdde3e9, { pos: [x, y, 0], scl: [1.6, 0.5, 1], seg: () => new Float32Array(0) })));
+    [-1, 1].forEach((s) => P.push(mk("Pitot probe " + (s > 0 ? "S" : "P"), new THREE.CylinderGeometry(0.03, 0.03, 0.6, 6), 0x9aa3ad, { rot: [0, 0, Math.PI / 2], pos: [34.2, 0.9, s * 1.72], angle: 60 })));
+
+    // Wing control surfaces as separate hinged skin panels that move.
+    const wpatch = (s, z0, z1, f0, f1, pf) => {
+      const NZ = 3, NC = 5, pos = [], idx = [];
+      const pt = (z, f, sg) => { const c = leAt(z) - teAt(z), T = c * (0.13 - 0.045 * z / 40); return [leAt(z) - c * f, wy(z) + 5.05 * T * ytf(f) * sg + sg * 0.035, s * z]; };
+      const pz = (z0 + z1) / 2, pc = leAt(pz) - teAt(pz), pv = [leAt(pz) - pc * pf, wy(pz), s * pz];
+      for (let sg = 1; sg >= -1; sg -= 2) {
+        const b = pos.length / 3;
+        for (let i = 0; i <= NZ; i++) for (let j = 0; j <= NC; j++) { const p = pt(z0 + (z1 - z0) * i / NZ, f0 + (f1 - f0) * j / NC, sg); pos.push(p[0] - pv[0], p[1] - pv[1], p[2] - pv[2]); }
+        for (let i = 0; i < NZ; i++) for (let j = 0; j < NC; j++) { const a = b + i * (NC + 1) + j; idx.push(a, a + 1, a + NC + 1, a + 1, a + NC + 2, a + NC + 1); }
+      }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals();
+      return { geo: g, pv };
+    };
+    const dep = (t) => { const u = (t % 14) / 14, k = u < 0.25 ? 0 : u < 0.4 ? (u - 0.25) / 0.15 : u < 0.7 ? 1 : u < 0.85 ? 1 - (u - 0.7) / 0.15 : 0; return k * k * (3 - 2 * k); };
+    const CS = [];
+    [[3.5, 10], [10, 16.5], [16.5, 23], [23, 30], [30, 38]].forEach((r, i) => CS.push(["Slat " + (i + 1), r, 0, 0.1, 0.1, 0xe9eef2, (t) => -0.32 * dep(t)]));
+    [[3.5, 9], [9, 14.2], [15, 21], [21, 27]].forEach((r, i) => CS.push(["Flap " + (i + 1), r, 0.74, 1, 0.74, 0xd9e0e6, (t) => 0.5 * dep(t)]));
+    [[28, 33.5], [33.5, 39]].forEach((r, i) => CS.push(["Aileron " + (i + 1), r, 0.76, 1, 0.76, 0xd2d9e0, (t, s) => 0.28 * Math.sin(t * 0.9) * s]));
+    [[5, 9.5], [9.5, 14], [15, 19.5], [19.5, 24], [24, 28.5], [28.5, 33]].forEach((r, i) => CS.push(["Spoiler " + (i + 1), r, 0.56, 0.74, 0.74, 0xcdd5dd, (t) => 0.6 * dep(t + 7)]));
+    [1, -1].forEach((s) => CS.forEach(([nm, r, f0, f1, pf, col, fn]) => {
+      const w = wpatch(s, r[0], r[1], f0, f1, pf);
+      P.push(mk(nm + (s > 0 ? ", starboard" : ", port"), w.geo, col, { pos: w.pv, r: 0.5, seg: () => new Float32Array(0), anim: (t, m) => { m.rotation.z = fn(t, s); } }));
+    }));
+
+    // Pulsing lights: strobes and beacons.
+    [[-21.9, wy(40) + 0.12, 40.3], [-21.9, wy(40) + 0.12, -40.3], [-36.2, 1.5, 0]].forEach((p, i) =>
+      P.push(mk("Strobe " + (i + 1), new THREE.SphereGeometry(0.16, 8, 6), 0xffffff, { pos: p, em: 0xffffff, seg: () => new Float32Array(0), anim: (t, m) => { const u = (t * 1.1 + i * 0.13) % 1; m.material.emissiveIntensity = u < 0.07 || (u > 0.14 && u < 0.21) ? 3 : 0.05; } })));
+    [[-30, 2.05], [-5, -4.22]].forEach((p, i) =>
+      P.push(mk("Beacon " + (i + 1), new THREE.SphereGeometry(0.2, 8, 6), 0xff2a1a, { pos: [p[0], p[1], 0], em: 0xff2a1a, seg: () => new Float32Array(0), anim: (t, m) => { m.material.emissiveIntensity = 0.1 + 1.6 * Math.max(0, Math.sin(t * 5 + i)); } })));
+
     // Four high-bypass engines: nacelle, inlet lip, fan with blades, spinner, core plug, pylon.
     [[12.2, 1], [25.5, 2]].forEach(([z0, n]) => [-1, 1].forEach((s) => {
       const z = s * z0, ex = leAt(z0) - 0.4, ey = wy(z0) - 3.2;
@@ -331,8 +405,9 @@ function boot() {
       const sp = [];
       for (let k = 0; k < 16; k++) { const a = (k / 16) * 6.2832; sp.push(ex + 3.6, ey, z, ex + 3.6, ey + Math.cos(a) * 1.4, z + Math.sin(a) * 1.4); }
       P.push(mk("Fan face, " + tag, new THREE.CylinderGeometry(1.42, 1.42, 0.12, 28), 0x161c27,
-        { rot: [0, 0, -Math.PI / 2], pos: [ex + 3.52, ey, z], max: 0.98, angle: 50, extra: new Float32Array(sp), r: 0.4 }));
+        { rot: [0, 0, -Math.PI / 2], pos: [ex + 3.52, ey, z], max: 0.98, angle: 50, r: 0.4 }));
       P.push(lathePart("Spinner, " + tag, [[0.5, 0], [0.38, 0.4], [0.02, 0.85]], 0xcfd6de, { rot: rotX, pos: [ex + 3.5, ey, z], long: 6, max: 0.98, m: 0.7, r: 0.25 }));
+      P.push(mk("Fan blades, " + tag, fanGeo(), 0x2a3340, { pos: [ex + 3.62, ey, z], max: 0.98, m: 0.6, r: 0.35, seg: () => new Float32Array(0), anim: (t, m) => { m.rotation.x = t * (s > 0 ? 16 : -16); } }));
       P.push(mk("Pylon, " + tag, extrude(polyShape([[-2.8, 0], [1.6, 0], [0.6, 2.2], [-2.4, 2.2]]), 0.4), ENGW,
         { pos: [ex, ey + 1.1, z - 0.2], scl: [1, 0.92, 1], r: 0.5 }));
     }));
@@ -356,11 +431,15 @@ function boot() {
       P.push(mk(name + " strut", new THREE.CylinderGeometry(0.2, 0.26, h, 12), GEAR, { pos: [x, y0 - h / 2, z], angle: 60, m: 0.6, r: 0.35 }));
       P.push(mk(name + " piston", new THREE.CylinderGeometry(0.14, 0.14, h * 0.45, 10), 0xd5dbe2, { pos: [x, gearY + R + h * 0.25, z], angle: 60, m: 0.8, r: 0.2 }));
       if (rows > 1) P.push(mk(name + " bogie beam", new THREE.BoxGeometry(gap * (rows - 1) + 0.3, 0.26, 0.3), GEAR, { pos: [x, gearY + R, z], m: 0.5 }));
+      P.push(mk(name + " drag brace", new THREE.BoxGeometry(0.1, h * 0.6, 0.1), GEAR, { pos: [x + 0.35, y0 - h * 0.35, z], rot: [0, 0, 0.5], m: 0.5 }));
+      P.push(mk(name + " torque link", new THREE.BoxGeometry(0.08, h * 0.25, 0.08), 0xd5dbe2, { pos: [x - 0.18, gearY + R + h * 0.3, z + 0.2], rot: [0.4, 0, 0], m: 0.6 }));
+      P.push(mk(name + " gear door", new THREE.BoxGeometry(0.06, h * 0.7, 0.9), 0xc9d1da, { pos: [x, y0 - h * 0.4, z + (z >= 0 ? 0.9 : -0.9)], r: 0.5 }));
       for (let r = 0; r < rows; r++) {
         const xx = x + (r - (rows - 1) / 2) * gap;
         [-1, 1].forEach((k) => {
           const at = [xx, gearY + R, z + k * 0.46];
           P.push(mk(name + " wheel", new THREE.CylinderGeometry(R, R, 0.42, 22), TIRE, { rot: [Math.PI / 2, 0, 0], pos: at, angle: 40, r: 0.9 }));
+          P.push(mk(name + " brake", new THREE.CylinderGeometry(R * 0.38, R * 0.38, 0.5, 12), 0x4a4f57, { rot: [Math.PI / 2, 0, 0], pos: at, angle: 40, m: 0.5 }));
           P.push(mk(name + " hub", new THREE.CylinderGeometry(R * 0.5, R * 0.5, 0.46, 14), 0xc4ccd5, { rot: [Math.PI / 2, 0, 0], pos: at, angle: 40, m: 0.7, r: 0.3 }));
         });
       }
@@ -369,26 +448,35 @@ function boot() {
     [-1, 1].forEach((s) => leg("Body gear " + (s > 0 ? "starboard" : "port"), -7, -3.6, s * 2.4, 2, 1.7, 0.78));
     [-1, 1].forEach((s) => leg("Wing gear " + (s > 0 ? "starboard" : "port"), -2.5, -2.6, s * 8.6, 2, 1.7, 0.78));
 
-    // Cutaway: open the roof over the main cabin and fit it out.
+    // Cutaway: slice away the starboard half of the cabin section and fit out both decks and the hold.
     if (cut) {
-      const inR = (x, y) => x > -11 && x < 15 && y > 1.6;
-      const planes = [new THREE.Plane(new THREE.Vector3(-1, 0, 0), -11), new THREE.Plane(new THREE.Vector3(1, 0, 0), -15), new THREE.Plane(new THREE.Vector3(0, -1, 0), 1.6)];
+      const planes = [new THREE.Plane(new THREE.Vector3(-1, 0, 0), -11), new THREE.Plane(new THREE.Vector3(1, 0, 0), -15), new THREE.Plane(new THREE.Vector3(0, 0, -1), 0)];
       ["Fuselage", "Upper deck"].forEach((nm) => {
         const p = P.find((q) => q.name === nm), m = p.mesh.material, a = p.seg, keep = [];
         m.clippingPlanes = planes; m.clipIntersection = true;
-        for (let i = 0; i < a.length; i += 6) if (!inR((a[i] + a[i + 3]) / 2, (a[i + 1] + a[i + 4]) / 2)) for (let k = 0; k < 6; k++) keep.push(a[i + k]);
+        for (let i = 0; i < a.length; i += 6) {
+          const mx = (a[i] + a[i + 3]) / 2, mz = (a[i + 2] + a[i + 5]) / 2;
+          if (!(mx > -11 && mx < 15 && mz > 0)) for (let k = 0; k < 6; k++) keep.push(a[i + k]);
+        }
         p.seg = new Float32Array(keep);
       });
-      P.push(mk("Cabin floor", boxes([[1.5, -0.6, 0, 26.2, 0.1, 6.9]]), 0x7d838c, { r: 0.9 }));
-      P.push(mk("Aisle carpet", boxes([[1.5, -0.54, -1.4, 26, 0.02, 0.5], [1.5, -0.54, 1.4, 26, 0.02, 0.5]]), 0x8f2f3a, { r: 1 }));
-      P.push(mk("Overhead bins", boxes([[1.5, 1.3, -3.0, 26.2, 0.45, 0.6], [1.5, 1.3, 3.0, 26.2, 0.45, 0.6]]), 0xdfe4e9, { r: 0.6 }));
+      P.push(mk("Cabin floor", boxes([[2, -0.6, 0, 26, 0.1, 6.9]]), 0x7d838c, { r: 0.9 }));
+      P.push(mk("Aisle carpet", boxes([[2, -0.54, -1.4, 26, 0.02, 0.5], [2, -0.54, 1.4, 26, 0.02, 0.5]]), 0x8f2f3a, { r: 1 }));
+      P.push(mk("Overhead bins", boxes([[2, 1.3, -3.0, 26, 0.45, 0.6], [2, 1.3, 3.0, 26, 0.45, 0.6]]), 0xdfe4e9, { r: 0.6 }));
       P.push(mk("Cabin bulkheads", boxes([[-11.3, 0.52, 0, 0.1, 2.15, 6.8], [15.0, 0.52, 0, 0.1, 2.15, 6.8]]), 0xcfd5db, { r: 0.7 }));
-      const zs = [-3.0, -2.45, -1.9, -0.85, -0.28, 0.28, 0.85, 1.9, 2.45, 3.0];
+      P.push(mk("Upper deck floor", boxes([[2, 1.95, 0, 26, 0.1, 5.8]]), 0x7d838c, { r: 0.9 }));
+      P.push(mk("Upper aisle carpet", boxes([[2, 2.01, -1.0, 26, 0.02, 0.4], [2, 2.01, 1.0, 26, 0.02, 0.4]]), 0x8f2f3a, { r: 1 }));
+      P.push(mk("Upper deck bulkheads", boxes([[-11.3, 2.8, 0, 0.1, 1.6, 3.6], [15.0, 2.8, 0, 0.1, 1.6, 3.6]]), 0xcfd5db, {}));
+      P.push(mk("Cargo floor", boxes([[2, -3.0, 0, 26, 0.1, 4.6]]), 0x6d737c, { r: 0.7 }));
+      const zs = [-3.0, -2.45, -1.9, -0.85, -0.28, 0.28, 0.85, 1.9, 2.45, 3.0], uz = [-2.3, -1.8, -1.3, -0.7, -0.2, 0.2, 0.7, 1.3, 1.8, 2.3];
       for (let r = 0; r < 28; r++) {
-        const x = -10.8 + r * 0.9, b = [];
+        const x = -10.8 + r * 0.9, b = [], u = [];
         zs.forEach((z) => b.push([x, -0.1, z, 0.46, 0.1, 0.5], [x - 0.2, 0.28, z, 0.08, 0.72, 0.5], [x, -0.36, z, 0.1, 0.4, 0.1]));
+        uz.forEach((z) => u.push([x, 2.45, z, 0.46, 0.1, 0.5], [x - 0.2, 2.83, z, 0.08, 0.72, 0.5], [x, 2.19, z, 0.1, 0.4, 0.1]));
         P.push(mk("Seat row " + (r + 1), boxes(b), 0x2b4f8c, { r: 0.8 }));
+        P.push(mk("Upper seat row " + (r + 1), boxes(u), 0x7a2f3b, { r: 0.8 }));
       }
+      for (let r = 0; r < 13; r++) P.push(mk("Cargo row " + (r + 1), boxes([[-10.4 + r * 2.0, -2.0, -1.15, 1.7, 1.7, 2.0], [-10.4 + r * 2.0, -2.0, 1.15, 1.7, 1.7, 2.0]]), 0xb7bfc9, { m: 0.5, r: 0.45 }));
     }
 
     // Apron: soft contact shadow and the yellow lead-in line. Not part of the envelope.
@@ -583,7 +671,7 @@ function boot() {
       P.push(mk("Tree trunk " + i, new THREE.CylinderGeometry(0.16, 0.26, h * 0.5, 8), 0x5b3f2c, { pos: [x, h * 0.25, z], dress: true, r: 1 }));
       [[0, 0.7, 0, 0.3], [0.22, 0.55, 0.1, 0.2], [-0.2, 0.58, -0.1, 0.22]].forEach((b, j) =>
         P.push(mk("Tree crown " + i + "." + j, new THREE.IcosahedronGeometry(h * b[3], 1), LEAF,
-          { pos: [x + b[0] * h, b[1] * h, z + b[2] * h], dress: true, flat: true, r: 1 })));
+          { pos: [x + b[0] * h, b[1] * h, z + b[2] * h], dress: true, flat: true, r: 1, anim: (t, m) => { m.position.x = x + b[0] * h + Math.sin(t * 0.9 + x) * 0.08; } })));
     };
     tree(1, -8.2, 4.8, 7);
     tree(2, 15.4, -5.2, 8.5);
@@ -607,7 +695,7 @@ function boot() {
     });
     P.push(mk("Porch railing", boxes(rl), TRIM, {}));
     P.push(mk("Exterior lamps", boxes([[-4.62, 1.95, zF + 0.1], [-1.38, 1.95, zF + 0.1], [6.55, 2.2, gz1 + 0.1], [12.05, 2.2, gz1 + 0.1]]
-      .map((p) => [p[0], p[1], p[2], 0.14, 0.26, 0.12])), 0x25272b, { em: 0xffc477 }));
+      .map((p) => [p[0], p[1], p[2], 0.14, 0.26, 0.12])), 0x25272b, { em: 0xffc477, anim: (t, m) => { m.material.emissiveIntensity = 0.75 + 0.25 * Math.sin(t * 2.1); } }));
     [[-W / 2 - 0.16, D / 2 + 0.1], [-W / 2 - 0.16, -D / 2 - 0.1], [W / 2 + 0.16, -D / 2 - 0.1]].forEach((p, i) =>
       P.push(mk("Downspout " + (i + 1), new THREE.CylinderGeometry(0.05, 0.05, H - 0.4, 8), TRIM, { pos: [p[0], (H - 0.4) / 2 + 0.1, p[1]], angle: 60 })));
     [-4.2, 2.2].forEach((x, i) => P.push(mk("Roof vent " + (i + 1), new THREE.CylinderGeometry(0.07, 0.09, 0.5, 8), 0x1f2226, { pos: [x, 7.45, -1.9], angle: 60 })));
@@ -615,9 +703,9 @@ function boot() {
     // Cutaway: clip above the first floor, drop the front and east walls, furnish the ground floor.
     let clip = null;
     if (cut) {
-      clip = new THREE.Plane(new THREE.Vector3(0, -1, 0), 2.95);
+      clip = new THREE.Plane(new THREE.Vector3(0, -1, 0), 5.65);
       GLOSSY.add(0x1e2c44);
-      const RM = /^(Front wall|Gable wall, east|Garage front wall|Garage door|Garage gable wall|Garage side window|Entry door|Door handle|Living window|Kitchen window|Sidelight|Exterior lamps|Window shutters|Bedroom \d window)|roof|chimney|flue|dormer|porch beam|attic/i;
+      const RM = /^(Front wall|Gable wall, east|Garage front wall|Garage door|Garage gable wall|Garage side window|Entry door|Door handle|Living window|Kitchen window|Sidelight|Exterior lamps|Window shutters|Bedroom \d window)|roof|chimney|flue|dormer|porch beam|attic|belly|corner/i;
       for (let i = P.length - 1; i >= 0; i--) if (RM.test(P[i].name)) P.splice(i, 1);
       const WOOD = 0xb98a5a, SOFA = 0x5d6f86, WHT = 0xe9e6df, TOP = 0x3a3d42, INT = 0xefece4;
       P.push(mk("Wood floor", boxes([[-1.325, 0.02, 0, 9.05, 0.04, 7.7]]), WOOD, { r: 0.6 }));
@@ -644,6 +732,24 @@ function boot() {
       [[-0.9, -0.9], [0.9, -0.9], [-0.9, 1.9], [0.9, 1.9]].forEach((w, i) => P.push(mk("Car wheel " + (i + 1), new THREE.CylinderGeometry(0.33, 0.33, 0.24, 18), 0x15181d, { rot: [0, 0, Math.PI / 2], pos: [9.3 + w[0], 0.33, w[1]], angle: 40, r: 0.9 })));
       P.push(mk("Garage shelf", boxes([[12.2, 0.9, -1.5, 0.4, 1.8, 3.0]]), 0x7b8088, {}));
       P.push(mk("Workbench", boxes([[9.3, 0.45, -2.8, 3.0, 0.9, 0.5]]), 0x8a6a45, {}));
+
+      const NB = 0xb08a5a;
+      const bed = (x, z, w) => [[x, 3.37, z, w, 0.5, 2.0], [x, 3.7, z, w - 0.1, 0.18, 1.9], [x, 3.95, z - 1.0, w, 0.9, 0.1]];
+      P.push(mk("First floor slab", boxes([[0.625, 3.0, 0, 10.45, 0.18, 7.7], [-5.225, 3.0, -2.875, 1.25, 0.18, 1.95], [-5.225, 3.0, 3.425, 1.25, 0.18, 0.85]]), INT, { r: 0.8 }));
+      P.push(mk("Upstairs floor", boxes([[0.625, 3.1, 0, 10.45, 0.03, 7.7], [-5.225, 3.1, -2.875, 1.25, 0.03, 1.95], [-5.225, 3.1, 3.425, 1.25, 0.03, 0.85]]), WOOD, { r: 0.6 }));
+      P.push(mk("Upstairs partitions", boxes([[-1.2, 4.37, 0, 0.12, 2.5, 7.7], [2.4, 4.37, 0, 0.12, 2.5, 7.7]]), INT, {}));
+      P.push(mk("Landing rail", boxes([[-4.62, 3.9, 0.55, 0.06, 0.06, 4.9], [-4.62, 3.5, -1.9, 0.06, 0.8, 0.06], [-4.62, 3.5, 0.55, 0.06, 0.8, 0.06], [-4.62, 3.5, 3.0, 0.06, 0.8, 0.06]]), 0x6b4a2f, {}));
+      P.push(mk("Master bed", boxes(bed(-2.8, -2.6, 1.9)), 0x8a97a8, { r: 0.9 }));
+      P.push(mk("Master linen", boxes([[-2.8, 3.82, -2.6, 1.8, 0.06, 1.9], [-3.3, 3.9, -3.4, 0.5, 0.12, 0.3], [-2.3, 3.9, -3.4, 0.5, 0.12, 0.3]]), 0xf1efe9, { r: 1 }));
+      P.push(mk("Bedside tables", boxes([[-4.1, 3.4, -3.5, 0.5, 0.55, 0.45], [-1.5, 3.4, -3.5, 0.5, 0.55, 0.45]]), 0x6b4a2f, {}));
+      P.push(mk("Master rug", boxes([[-2.8, 3.14, -0.9, 2.2, 0.02, 2.4]]), 0x4a5d7a, { r: 1 }));
+      P.push(mk("Master wardrobe", boxes([[-1.5, 4.2, 1.9, 0.5, 2.2, 1.6]]), NB, {}));
+      P.push(mk("Kids bed", boxes(bed(0.2, -2.6, 1.1)), 0x5c8a6b, { r: 0.9 }));
+      P.push(mk("Desk", boxes([[1.8, 3.9, -3.4, 1.2, 0.05, 0.6], [1.3, 3.5, -3.6, 0.06, 0.78, 0.06], [2.3, 3.5, -3.6, 0.06, 0.78, 0.06], [1.3, 3.5, -3.2, 0.06, 0.78, 0.06], [2.3, 3.5, -3.2, 0.06, 0.78, 0.06]]), 0x8a6a45, {}));
+      P.push(mk("Desk chair", boxes([[1.8, 3.6, -2.7, 0.45, 0.08, 0.45], [1.8, 3.95, -2.5, 0.45, 0.6, 0.06]]), 0x2a2a2a, {}));
+      P.push(mk("Guest bed", boxes(bed(4.0, -2.6, 1.5)), 0xa86a5a, { r: 0.9 }));
+      P.push(mk("Guest wardrobe", boxes([[5.55, 4.2, 0.8, 0.5, 2.2, 1.4]]), NB, {}));
+      P.push(mk("Guest rug", boxes([[4.0, 3.14, -0.5, 2.0, 0.02, 2.0]]), 0x6b7f5a, { r: 1 }));
     }
     return {
       parts: P,
@@ -666,7 +772,7 @@ function boot() {
       alt: "A four-engine double-deck airliner drawn as a blueprint line by line, then turning into a solid 3D model",
       envelope: "length × span × height",
       cam: { from: { az: 0.0, el: 1.34 }, to: { az: 0.72, el: 0.36 } },
-      camCut: { from: { az: 0.0, el: 1.34 }, to: { az: 0.45, el: 0.9 } }
+      camCut: { from: { az: 0.0, el: 1.34 }, to: { az: 0.2, el: 0.4 } }
     },
     {
       id: "house", build: buildHouse,
@@ -674,7 +780,7 @@ function boot() {
       alt: "A two-storey house with garage and porch drawn as a blueprint line by line, then turning into a solid 3D model",
       envelope: "width × depth × height",
       cam: { from: { az: 0.0, el: 0.05 }, to: { az: 0.52, el: 0.3 } },
-      camCut: { from: { az: 0.0, el: 0.05 }, to: { az: 0.5, el: 0.62 } }
+      camCut: { from: { az: 0.0, el: 0.05 }, to: { az: 0.42, el: 0.3 } }
     }
   ];
 
@@ -720,6 +826,7 @@ function boot() {
 
   function loadScene(i) {
     disposeCurrent();
+    MATC.clear();
     const def = SCENES[i];
     const built = def.build(S.cut);
     const cl = built.clip ? [built.clip] : [];
@@ -730,6 +837,7 @@ function boot() {
     S.group = new THREE.Group();
     built.parts.forEach((p) => S.group.add(p.mesh));
     scene.add(S.group);
+    S.anims = built.parts.filter((p) => p.mesh.userData.anim).map((p) => p.mesh);
     S.group.updateMatrixWorld(true);
     const box = envBox();
     const dimArr = built.dims(box);
@@ -784,6 +892,7 @@ function boot() {
 
   /* k = overall visibility multiplier (used to erase the old scene before a swap) */
   function update(t, k) {
+    if (!reduce && S.anims && S.anims.length) { const ta = performance.now() / 1000; for (const m of S.anims) m.userData.anim(ta, m); }
     const drawP = clamp((t - 0.3) / 3.3, 0, 1);
     const sf = clamp(drawP / 0.86, 0, 1), df = clamp((drawP - 0.86) / 0.14, 0, 1);
     const sN = Math.floor(S.structN * easeIO(sf) * k) & ~1;
