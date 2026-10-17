@@ -485,6 +485,7 @@ function boot() {
 
     return {
       parts: P,
+      focus: cut ? new THREE.Box3(new THREE.Vector3(-18, -6, -8), new THREE.Vector3(22, 7, 8)) : null,
       gridStep: 4,
       dims: (box) => {
         const gy = box.min.y;
@@ -501,7 +502,7 @@ function boot() {
     const W = 12, D = 8, H = 5.6, R = 3.2, t = 0.28, P = [];
     TEXBY.clear(); GLOSSY.clear();
     const WALL = 0xe1d9c6, TRIM = 0xf7f5f0, ROOF = 0x4b4f57, ROOFD = 0x363a41, GLASS = 0x6c93bd, BRICK = 0xb0583d, SLAB = 0xbab7af, DOOR = 0x8a2f25,
-      GDOOR = 0xe8e5de, CONC = 0xa9a7a1, GRASS = 0x4f8a3c, LEAF = 0x3f7d3a, SHUT = 0x2f4a3a;
+      GDOOR = 0xe8e5de, CONC = 0xa9a7a1, GRASS = 0x4a7a3a, LEAF = 0x37653a, SHUT = 0x2f4a3a;
     GLOSSY.add(GLASS);
     const grey = (g, v) => { g.fillStyle = "rgb(" + v + "," + v + "," + v + ")"; };
     const tSid = mkTex(64, 128, (g, w) => { for (let i = 0; i < 8; i++) { const y = i * 16; grey(g, 232 + Math.floor(rnd() * 20)); g.fillRect(0, y, w, 16); g.fillStyle = "rgba(0,0,0,.28)"; g.fillRect(0, y + 13, w, 3); g.fillStyle = "rgba(255,255,255,.5)"; g.fillRect(0, y, w, 1); } });
@@ -663,7 +664,7 @@ function boot() {
     side("Garage side window", 2.0, 3.0, 1.1, 2.0, gx1, 1);
 
     // Site dressing: lawn, soft contact shadow, hedges and trees. Left out of the envelope.
-    P.push(mk("Lawn", new THREE.PlaneGeometry(27, 24), GRASS, { rot: [-Math.PI / 2, 0, 0], pos: [3.3, -0.07, 2.2], dress: true, r: 1 }));
+    P.push(mk("Lawn", new THREE.PlaneGeometry(25, 21), GRASS, { rot: [-Math.PI / 2, 0, 0], pos: [3.3, -0.07, 1.6], dress: true, r: 1 }));
     P.push(mk("Ground shadow", new THREE.PlaneGeometry(24, 16), 0x000000, { rot: [-Math.PI / 2, 0, 0], pos: [3.4, -0.06, 0.8], dress: true, map: BLOB, tex: null, max: 0.5, r: 1 }));
     [0.9, 2.0, 3.1, 4.2, 5.3].forEach((x, i) => P.push(mk("Hedge " + (i + 1), new THREE.SphereGeometry(0.55, 12, 9), LEAF,
       { pos: [x, 0.45, D / 2 + 0.75], scl: [1.1, 0.85, 0.9], dress: true, flat: true, r: 1 })));
@@ -754,6 +755,7 @@ function boot() {
     return {
       parts: P,
       clip,
+      focus: cut ? new THREE.Box3(new THREE.Vector3(-7, 0, -5), new THREE.Vector3(13.5, 6, 7.5)) : null,
       gridStep: 1,
       dims: (box) => {
         const gy = box.min.y;
@@ -853,8 +855,9 @@ function boot() {
 
     const size = box.getSize(new THREE.Vector3());
     const sphere = full.getBoundingSphere(new THREE.Sphere());
-    S.center.copy(sphere.center);
-    fitDistance(sphere.radius);
+    const fs = built.focus ? built.focus.getBoundingSphere(new THREE.Sphere()) : sphere;
+    S.center.copy(fs.center); S.focusR = built.focus ? fs.radius : 0;
+    fitDistance(fs.radius);
 
     const gridSize = Math.ceil(sphere.radius * 2.6 / 2) * 2;
     const step = built.gridStep || 1;
@@ -947,7 +950,7 @@ function boot() {
     camera.updateProjectionMatrix();
     if (S.cur && S.group) {
       const box = envBox();
-      fitDistance(box.getBoundingSphere(new THREE.Sphere()).radius * 1.18);
+      fitDistance(S.focusR || box.getBoundingSphere(new THREE.Sphere()).radius * 1.18);
     }
   }
   const renderOnce = () => { if (S.cur) { update(reduce ? 99 : S.t, 1); renderer.render(scene, camera); } };
