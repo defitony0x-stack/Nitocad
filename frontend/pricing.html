@@ -63,6 +63,7 @@
 </style>
 <link rel="stylesheet" href="theme.css">
 <script src="theme.js"></script>
+<script src="config.js"></script>
 </head>
 <body>
 <header class="sp-head">
@@ -71,6 +72,7 @@
     <nav class="sp-nav" aria-label="Site">
       <a href="index.html">Home</a>
       <a href="pricing.html" aria-current="page">Pricing</a>
+      <a href="civil.html">Civil tools</a>
       <a href="exports.html">Exports</a>
       <a href="studio.html" class="btn btn-primary">Open CAD Studio</a>
     </nav>
@@ -80,11 +82,11 @@
   <div class="wrap">
 
     <h1>Pricing</h1>
-    <p class="lead">Connect a wallet, sign in for free, then buy credits in BOT. One credit covers one generation, and every export format is included.</p>
+    <p class="lead">Connect a wallet, sign in for free, then buy credits in BOT. One credit covers one generation, and every export format is included. Payments settle in native BOT on BOT Chain.</p>
     <div class="grid3">
       <div class="card">
         <h3>Single credit</h3>
-        <div class="amount"><b>0.01 BOT</b><span>per credit</span></div>
+        <div class="amount"><b><span data-price="credit">0.01</span> BOT</b><span>per credit</span></div>
         <p>For one part at a time. Top up whenever you need another.</p>
         <ul>
           <li>Free STL preview first, no wallet needed</li>
@@ -94,22 +96,22 @@
         <a href="studio.html" class="btn btn-ghost">Open CAD Studio</a>
       </div>
       <div class="card best">
-        <h3>1,000 credits</h3>
-        <div class="amount"><b>1 BOT</b><span>0.001 BOT per credit</span></div>
+        <h3><span data-price="pack1000_credits">1,000</span> credits</h3>
+        <div class="amount"><b><span data-price="pack1000">1</span> BOT</b><span><span data-price="rate1000">0.001</span> BOT per credit</span></div>
         <p>Ten times cheaper per credit than buying one at a time.</p>
         <ul>
-          <li>1,000 generations, no expiry</li>
+          <li><span data-price="pack1000_credits">1,000</span> generations, no expiry</li>
           <li>Works across every CAD Studio chat</li>
           <li>Full MCP endpoint access for agents</li>
         </ul>
         <a href="studio.html" class="btn btn-primary">Open CAD Studio</a>
       </div>
       <div class="card">
-        <h3>10,000 credits</h3>
-        <div class="amount"><b>10 BOT</b><span>0.001 BOT per credit</span></div>
+        <h3><span data-price="pack10000_credits">10,000</span> credits</h3>
+        <div class="amount"><b><span data-price="pack10000">10</span> BOT</b><span><span data-price="rate10000">0.001</span> BOT per credit</span></div>
         <p>The same rate as the 1,000 pack, in a bigger batch.</p>
         <ul>
-          <li>10,000 generations, no expiry</li>
+          <li><span data-price="pack10000_credits">10,000</span> generations, no expiry</li>
           <li>For teams and agents working in CAD Studio all day</li>
           <li>Full MCP endpoint access for agents</li>
         </ul>

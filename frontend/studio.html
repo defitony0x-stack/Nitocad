@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>CAD Studio | NitoCAD</title>
-<meta name="description" content="Design CAD parts by chatting. Build, change and export STEP files in one conversation, with on-chain anchoring on BOT Chain.">
+<meta name="description" content="Design CAD parts by chatting. Preview parts for free, change them as often as you like, and pay only when you generate the final files, with on-chain anchoring on BOT Chain.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,500;0,9..144,600;1,9..144,500&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -26,7 +26,7 @@
     <div class="gate-card">
       <span class="eyebrow">CAD Studio</span>
       <h1>Design parts by talking to them.</h1>
-      <p>Sign in to open a chat workspace for CAD. Describe a part, change it as many times as you like, then export STEP and anchor it on BOT Chain.</p>
+      <p>Sign in to open a chat workspace for CAD. Describe a part and change it as many times as you like for free. Generate the final files only when it looks right, then anchor it on BOT Chain.</p>
       <ul class="gate-list">
         <li><svg class="icon" viewBox="0 0 24 24"><path d="M5 12l4 4 10-10"/></svg>One chat per design, with every version kept</li>
         <li><svg class="icon" viewBox="0 0 24 24"><path d="M5 12l4 4 10-10"/></svg>STEP, IGES, DXF and PDF from the same conversation</li>
@@ -99,13 +99,22 @@
     </div>
 
     <div class="composer-wrap">
-      <div class="composer">
-        <textarea id="input" rows="1" placeholder="Describe a part, or tell me what to change" aria-label="Message"></textarea>
+      <div class="ai-bar">
+        <label for="aiModel">AI</label>
+        <select id="aiModel" aria-label="Choose the AI that plans your part"></select>
+        <span class="ai-note" id="aiNote"></span>
+      </div>
+      <div class="composer" id="composer">
+        <button type="button" class="attach" id="attach" aria-label="Attach a file" title="Attach a STEP, IGES, PDF, image or mesh file">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M21 11.5l-8.6 8.6a5 5 0 0 1-7.1-7.1l8.6-8.6a3.3 3.3 0 0 1 4.7 4.7l-8.6 8.6a1.7 1.7 0 0 1-2.4-2.4l7.9-7.9"/></svg>
+        </button>
+        <input type="file" id="fileInput" hidden accept=".step,.stp,.iges,.igs,.brep,.pdf,.png,.jpg,.jpeg,.webp,.stl,.obj,.glb,.gltf,.3mf">
+        <textarea id="input" rows="1" placeholder="Describe a part, or attach a file" aria-label="Message"></textarea>
         <button type="button" class="send" id="send" aria-label="Send" disabled>
           <svg class="icon" viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
         </button>
       </div>
-      <div class="fineprint">Each new build uses 1 credit. Changes you ask for in the same chat are part of the build. Check dimensions before you manufacture.</div>
+      <div class="fineprint">Previews, changes, questions and reading an attached file are free. Generating the full files for a version uses credits, from 2 on Engine up to 40 on Advanced. Check dimensions before you manufacture.</div>
     </div>
   </main>
 
@@ -143,6 +152,7 @@
 
 <div class="toast" id="toast" role="status"></div>
 
+<script src="config.js"></script>
 <script src="auth.js"></script>
 <script type="importmap">
 {
