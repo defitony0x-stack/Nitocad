@@ -289,7 +289,6 @@
 </style>
 <link rel="stylesheet" href="theme.css">
 <script src="theme.js"></script>
-<script src="config.js"></script>
 </head>
 <body>
 
@@ -464,8 +463,8 @@ import { STLLoader } from "three/addons/loaders/STLLoader.js";
   // logic) so a session/API-base choice made on either page is
   // honored on both - see that file for the fuller explanatory
   // comments on each of these.
-  const DEFAULT_API_BASE = (window.NITOCAD_CONFIG && window.NITOCAD_CONFIG.apiBase) || "https://nitocad-production-2df5.up.railway.app";
-  function getApiBase(){ return localStorage.getItem('nitocad_api_base') || DEFAULT_API_BASE; }
+  const DEFAULT_API_BASE = "https://nitocad-production-9014.up.railway.app";
+  function getApiBase(){ return DEFAULT_API_BASE; }
 
   let chainConfig = null;
   async function getChainConfig(base){
@@ -1412,14 +1411,9 @@ import { STLLoader } from "three/addons/loaders/STLLoader.js";
     const warnings = (data.validation && data.validation.warnings) || [];
     const corrections = (data.validation && data.validation.corrections) || {};
     if(warnings.length || Object.keys(corrections).length){
-      // A warning that already states the old and new value covers its correction, so say it once.
-      const nums = s => (String(s).match(/-?\d+(?:\.\d+)?/g) || []).map(Number);
-      const has = (n, v) => n.some(x => Math.abs(x - Number(v)) < 1e-6);
-      const covered = c => warnings.some(w => { const n = nums(w); return has(n, c.old) && has(n, c.new); });
-      const notes = [...new Set(warnings.map(String))];
-      for(const [k, c] of Object.entries(corrections)) if(!covered(c)) notes.push(`${k}: ${c.old} → ${c.new}`);
       let html = '<div class="demo-warn"><strong>Validation notes:</strong><ul style="margin:6px 0 0;padding-left:18px;">';
-      notes.forEach(w => html += `<li>${esc(w)}</li>`);
+      warnings.forEach(w => html += `<li>${w}</li>`);
+      for(const [k, c] of Object.entries(corrections)) html += `<li>${k}: ${c.old} → ${c.new}</li>`;
       html += '</ul></div>';
       warningsEl.innerHTML = html;
     }
@@ -1595,7 +1589,7 @@ import { STLLoader } from "three/addons/loaders/STLLoader.js";
     var cta = document.getElementById('toGeneratorBtn');
     if (cta) { cta.href = 'studio.html'; cta.target = '_top'; cta.textContent = 'Open CAD Studio'; }
     var note = document.querySelector('.preview-cta p');
-    if (note) note.textContent = "Happy with it? This preview is STL-only and isn't saved. Open CAD Studio to keep changing it by chat and export STEP, IGES, DXF and PDF.";
+    if (note) note.textContent = "Happy with it? This preview is STL-only and isn't saved. Open CAD Studio to keep changing it by chat and export STEP, IGES, DXF, PDF, GLB and 3MF.";
     document.querySelectorAll('a[href]').forEach(function(a){ if (!a.target) a.target = '_top'; });
     function send(){
       try { parent.postMessage({ type: 'nitocad-embed-height', height: document.documentElement.getBoundingClientRect().height }, location.origin); } catch (e) {}

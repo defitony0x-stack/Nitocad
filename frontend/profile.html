@@ -237,7 +237,6 @@
 </style>
 <link rel="stylesheet" href="theme.css">
 <script src="theme.js"></script>
-<script src="config.js"></script>
 </head>
 <body>
 
@@ -391,8 +390,8 @@
   // logic) so a session/API-base choice made on either page is
   // honored on both - see that file for the fuller explanatory
   // comments on each of these.
-  const DEFAULT_API_BASE = (window.NITOCAD_CONFIG && window.NITOCAD_CONFIG.apiBase) || "https://nitocad-production-2df5.up.railway.app";
-  function getApiBase(){ return localStorage.getItem('nitocad_api_base') || DEFAULT_API_BASE; }
+  const DEFAULT_API_BASE = "https://nitocad-production-9014.up.railway.app";
+  function getApiBase(){ return DEFAULT_API_BASE; }
 
   let chainConfig = null;
   async function getChainConfig(base){

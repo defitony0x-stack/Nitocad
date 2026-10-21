@@ -1,10 +1,14 @@
 /* NitoCAD Studio: front end only.
+   Preview first, pay when you generate: every message builds a free preview, and a part's full
+   files (STEP, IGES, DXF, PDF, GLB, 3MF) unlock when the person presses Generate, which spends credits.
+   The price depends on the AI tier that planned the version, and each tier has a daily allowance of messages.
    All backend calls go through the `Backend` object near the top. When the chat backend
    changes, replace `Backend.send` and `Backend.anchor` and leave the rest alone.
    Add ?demo=1 to the URL to explore the interface with sample parts and no sign-in. */
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { STLLoader } from "three/addons/loaders/STLLoader.js";
+import { applyRealisticLook, prepareStlGeometry, buildPartObject, materialFor, setWireframe, disposeObject } from "./viewer-look.js";
 
 const Auth = window.NitoAuth;
 const BASE = Auth.API_BASE;
@@ -16,39 +20,42 @@ const IS_TOUCH = matchMedia("(hover: none)").matches;
 
 /* ============================================================ backend adapter */
 const Backend = {
-  /* Returns { reply, part?, needCredits?, authExpired? }. `lastPart` is the latest part in
-     this chat, so edits can build on it. Until the backend takes conversation history, an
-     edit is sent as the earlier description plus the new instruction. */
-  async send({ text, lastPart }) {
-    if (DEMO) return Demo.send(text, lastPart);
-    const session = Auth.getSession();
-    if (!session) return { authExpired: true };
-    const balance = await Auth.fetchBalance();
-    if (balance === 0) return { needCredits: true };
-    const description = lastPart ? lastPart.description + ". Change: " + text : text;
-    let res, data;
-    try {
-      res = await fetch(BASE + "/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: "Bearer " + session.session_id },
-        body: JSON.stringify({ description })
-      });
-      if (res.status === 401) return { authExpired: true };
-      data = await res.json();
-    } catch (e) {
-      return { reply: "I could not reach the build service. Check your connection and try again.", error: true };
+  /* One chat turn. The server reads the whole conversation and the current part's spec
+     (POST /chats/{id}/messages), decides build, edit or answer, charges, builds and stores
+     everything. Returns { reply, part?, needCredits?, balance?, authExpired?, error? }. */
+  async send({ chat, text }) {
+    if (DEMO) return Demo.send(text, lastPart(chat));
+    const r = await api("POST", `/chats/${chat.id}/messages`, { content: text, model: S.model });
+    if (r.authExpired) return { authExpired: true };
+    if (!r.ok) {
+      const msg = r.status === 409 ? "I am still working on your last message. Give me a moment."
+        : r.status === 404 ? "I could not find this chat any more. Start a new design."
+        : r.detail || "Something went wrong building that. Please try again.";
+      return { reply: msg, error: true };
     }
-    if (!res.ok || !data.success) {
-      return { reply: (data && (data.error || data.detail)) || "That build failed (HTTP " + res.status + ").", error: true };
-    }
-    const p = data.parameters || {};
-    const part = {
-      id: uid(), description, jobId: data.job_id || null,
-      partType: p.part_type || "part", params: flatParams(p), material: p.material || "",
-      notes: collectNotes(data), createdAt: Date.now()
+    const d = r.data;
+    return {
+      reply: d.assistant_message.content, part: d.part ? fromServerPart(d.part) : null,
+      needCredits: !!d.needs_credits, balance: d.balance,
+      choices: (d.assistant_message.meta && d.assistant_message.meta.choices) || []
     };
-    part.title = titleFor(part.partType);
-    return { reply: replyFor(part, !!lastPart), part };
+  },
+
+  /* The template picker's cards. */
+  async templates() {
+    if (DEMO) return DEMO_TEMPLATES;
+    const r = await api("GET", "/templates");
+    return r.ok ? r.data : null;
+  },
+
+  /* Start a part from a template: a free preview, no AI. Same reply shape as send(). */
+  async applyTemplate({ chat, id, text }) {
+    if (DEMO) return Demo.send(text, lastPart(chat));
+    const r = await api("POST", `/chats/${chat.id}/templates/${id}`);
+    if (r.authExpired) return { authExpired: true };
+    if (!r.ok) return { reply: r.detail || "I could not start that template. Please try again.", error: true };
+    const d = r.data;
+    return { reply: d.assistant_message.content, part: d.part ? fromServerPart(d.part) : null, balance: d.balance, choices: [] };
   },
 
   async anchor(part) {
@@ -89,6 +96,27 @@ const Backend = {
     deliver(BASE + info.url, info.filename || `${part.jobId}.${fmt}`);
   },
 
+  /* Pay for this version and unlock its full files. Safe to repeat: a version that is
+     already paid costs nothing. Returns { ok, balance } or { needCredits } or { authExpired }. */
+  async generate(chat, part) {
+    if (DEMO) { await sleep(900); return { ok: true, charged: 1, balance: S.balance == null ? 23 : S.balance - 1 }; }
+    const r = await api("POST", `/chats/${chat.id}/parts/${part.id}/generate`);
+    if (r.authExpired) return { authExpired: true };
+    if (r.status === 402) return { needCredits: true, detail: r.detail };
+    if (!r.ok) return { error: r.detail || "I could not build the files. Please try again." };
+    return { ok: true, balance: r.data.balance, charged: r.data.charged };
+  },
+
+  /* Manufacturability check for one process: paid once per version and process, then reopened free. */
+  async check(chat, part, process) {
+    if (DEMO) { await sleep(800); return { ok: true, charged: 5, balance: S.balance == null ? 19 : S.balance - 5, report: demoReport(process) }; }
+    const r = await api("POST", `/chats/${chat.id}/parts/${part.id}/check`, { process });
+    if (r.authExpired) return { authExpired: true };
+    if (r.status === 402) return { needCredits: true, detail: r.detail };
+    if (!r.ok) return { error: r.detail || "I could not run the check. Please try again." };
+    return { ok: true, report: r.data.report, charged: r.data.charged, balance: r.data.balance };
+  },
+
   async buyCredits(tier) {
     const cfg = await Auth.getChainConfig();
     const price = tier === "single" ? cfg.credit_price_bot : tier === "pack_1000" ? cfg.pack_1000_price_bot : cfg.pack_10000_price_bot;
@@ -125,10 +153,44 @@ function collectNotes(data) {
 function titleFor(t) { return String(t || "part").replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase()); }
 function replyFor(part, isEdit) {
   const n = Object.keys(part.params).length;
-  let s = isEdit ? `Updated. This is a new version of the ${part.title} with your change applied.` : `Here is your ${part.title}, built as a solid with ${n} parameter${n === 1 ? "" : "s"}.`;
+  let s = isEdit ? `Updated. This is a new free preview of the ${part.title} with your change applied.` : `Here is a free preview of your ${part.title}, built as a solid with ${n} parameter${n === 1 ? "" : "s"}.`;
   if (part.notes && part.notes.length) s += `\n\nI adjusted a few values to keep it manufacturable. The details are under Specs.`;
-  s += `\n\nTell me what to change, or open Files to export STEP.`;
+  s += `\n\nTell me what to change, as often as you like. When it looks right, press Generate for the STEP, IGES, DXF, PDF, GLB and 3MF files.`;
   return s;
+}
+
+/* ============================================================ server api */
+async function api(method, path, body) {
+  const s = Auth.getSession();
+  if (!s) return { authExpired: true };
+  let res;
+  try {
+    res = await fetch(BASE + path, {
+      method, body: body ? JSON.stringify(body) : undefined,
+      headers: { Authorization: "Bearer " + s.session_id, ...(body ? { "Content-Type": "application/json" } : {}) }
+    });
+  } catch (e) { return { ok: false, status: 0, detail: "I could not reach the server. Check your connection and try again." }; }
+  if (res.status === 401) return { authExpired: true };
+  let data = null; try { data = await res.json(); } catch (e) { /* empty body */ }
+  const d = data && (data.detail || data.error);
+  return { ok: res.ok, status: res.status, data, detail: typeof d === "string" ? d : (d ? "Please check your message and try again." : "") };
+}
+function fromServerPart(p) {
+  const spec = p.spec || {};
+  const tx = p.anchor_tx || null;
+  return {
+    id: p.id, version: p.version, jobId: p.job_id, title: p.title, partType: p.part_type, paid: p.paid !== false, checks: p.checks || {}, assembly: p.assembly || null, generateCredits: p.generate_credits || 10, aiTier: p.ai_tier || "basic",
+    params: flatParams({ parameters: spec.parameters || {} }), material: spec.material || "", notes: p.notes || [],
+    description: "", spec, anchor: tx ? { anchor_tx: tx, explorer_url: Auth.PINNED_CHAIN.explorer_url + "/tx/" + tx } : null
+  };
+}
+function fromServerChat(c) {
+  const parts = {};
+  (c.parts || []).forEach((p) => { parts[p.id] = fromServerPart(p); });
+  return {
+    id: c.id, title: c.title, updatedAt: Date.parse(c.updated_at) || Date.now(), remote: true, loaded: true, parts,
+    messages: (c.messages || []).map((m) => ({ id: m.id, role: m.role, text: m.content, partId: m.part_id || undefined, needCredits: !!(m.meta && m.meta.needs_credits), choices: (m.meta && m.meta.choices) || [] }))
+  };
 }
 
 /* ============================================================ demo backend */
@@ -148,14 +210,14 @@ const Demo = {
     };
     const part = {
       id: uid(), description: t, jobId: "demo-" + uid(), demoKind: kind, partType: kind === "bracket" ? "l_bracket" : kind,
-      params: defs[kind], material: "6061 aluminum", notes: [], createdAt: Date.now()
+      params: defs[kind], material: "6061 aluminum", notes: [], createdAt: Date.now(), paid: false
     };
     part.title = titleFor(part.partType);
     return { reply: replyFor(part, !!lastPart), part };
   },
   geometry(kind, p) {
     const g = new THREE.Group();
-    const mat = new THREE.MeshStandardMaterial({ color: 0xD3541F, metalness: 0.15, roughness: 0.45 });
+    const mat = materialFor("aluminum");
     const add = (geo, x = 0, y = 0, z = 0) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); g.add(m); return m; };
     if (kind === "gear") {
       const N = Math.max(6, Math.round(p.teeth || 20)), ro = (p.module || 2) * N / 2 + (p.module || 2), ri = ro - (p.module || 2) * 2.2;
@@ -198,19 +260,54 @@ const Demo = {
 const S = { chats: [], activeId: null, activePartId: null, busy: false, balance: null, tab: "specs" };
 let storeKey = "nitocad_studio_v1:guest";
 function userKey() { const s = Auth.getSession(); return DEMO ? "demo" : (s ? (s.email || s.wallet_address || "user") : "guest"); }
-function load() {
-  storeKey = "nitocad_studio_v1:" + userKey();
-  try { S.chats = JSON.parse(localStorage.getItem(storeKey) || "[]"); } catch (e) { S.chats = []; }
-  S.chats.sort((a, b) => b.updatedAt - a.updatedAt);
+async function load() {
   S.activeId = null;
+  storeKey = "nitocad_studio_v1:" + userKey();
+  if (DEMO) {
+    try { S.chats = JSON.parse(localStorage.getItem(storeKey) || "[]"); } catch (e) { S.chats = []; }
+    S.chats.sort((a, b) => b.updatedAt - a.updatedAt);
+    return;
+  }
+  await migrateLocal();
+  const r = await api("GET", "/chats");
+  if (r.authExpired) { Auth.clearSession(); return; }
+  S.chats = r.ok ? r.data.chats.map((c) => ({
+    id: c.id, title: c.title, updatedAt: Date.parse(c.updated_at) || Date.now(), remote: true, loaded: false,
+    count: c.message_count, messages: [], parts: {}
+  })) : [];
+  if (!r.ok) toast(r.detail || "Could not load your chats.");
+}
+/* Chats saved in this browser before server storage existed are uploaded once, then set aside. */
+async function migrateLocal() {
+  let raw = null;
+  try { raw = localStorage.getItem(storeKey); } catch (e) { return; }
+  if (!raw) return;
+  let chats = [];
+  try { chats = JSON.parse(raw); } catch (e) { return; }
+  chats = (chats || []).filter((c) => c && c.messages && c.messages.length).slice(0, 50);
+  if (!chats.length) { try { localStorage.removeItem(storeKey); } catch (e) { /* ignore */ } return; }
+  const r = await api("POST", "/chats/import", { chats });
+  if (r.ok) {
+    try { localStorage.setItem(storeKey + ":imported", raw); localStorage.removeItem(storeKey); } catch (e) { /* ignore */ }
+    toast(`Moved ${r.data.imported} chat${r.data.imported === 1 ? "" : "s"} to your account.`);
+  }
+}
+async function loadChat(c) {
+  if (DEMO || c.loaded || !c.remote) return true;
+  const r = await api("GET", `/chats/${c.id}`);
+  if (r.authExpired) { Auth.clearSession(); return false; }
+  if (!r.ok) { toast(r.detail || "Could not open that chat."); return false; }
+  Object.assign(c, fromServerChat(r.data));
+  return true;
 }
 let saveT = 0;
-function save() {
+function save() {   /* demo mode only: real accounts are stored on the server */
+  if (!DEMO) return;
   clearTimeout(saveT);
-  saveT = setTimeout(() => { try { localStorage.setItem(storeKey, JSON.stringify(S.chats.slice(0, 60))); } catch (e) { /* storage full or blocked */ } }, 150);
+  saveT = setTimeout(() => { try { localStorage.setItem(storeKey, JSON.stringify(S.chats.slice(0, 60))); } catch (e) { /* ignore */ } }, 150);
 }
 const chat = () => S.chats.find((c) => c.id === S.activeId) || null;
-function newChat() { const c = { id: uid(), title: "New design", createdAt: Date.now(), updatedAt: Date.now(), messages: [], parts: {} }; S.chats.unshift(c); return c; }
+function newChat() { const c = { id: uid(), title: "New design", createdAt: Date.now(), updatedAt: Date.now(), messages: [], parts: {}, remote: false, loaded: true }; S.chats.unshift(c); return c; }
 function partOf(c, id) { return c && c.parts[id]; }
 function lastPart(c) { if (!c) return null; for (let i = c.messages.length - 1; i >= 0; i--) { const m = c.messages[i]; if (m.partId && c.parts[m.partId]) return c.parts[m.partId]; } return null; }
 function versionsOf(c, part) { const all = []; c.messages.forEach((m) => { if (m.partId && c.parts[m.partId]) all.push(c.parts[m.partId]); }); return all; }
@@ -264,8 +361,10 @@ function viewerInit() {
   el.insertBefore(V.renderer.domElement, el.firstChild);
   V.controls = new OrbitControls(V.camera, V.renderer.domElement);
   V.controls.enableDamping = true;
-  V.scene.add(new THREE.HemisphereLight(0xffffff, 0xb7c3d1, 1.0));
-  const dl = new THREE.DirectionalLight(0xffffff, 1.4); dl.position.set(60, 90, 50); V.scene.add(dl);
+  // the studio environment does most of the lighting, so these two only add shape and a shadow
+  V.scene.add(new THREE.HemisphereLight(0xffffff, 0xb7c3d1, 0.35));
+  const dl = new THREE.DirectionalLight(0xffffff, 1.6); dl.position.set(60, 90, 50); V.scene.add(dl);
+  applyRealisticLook(V.scene, V.renderer, dl);
   V.gridObj = new THREE.GridHelper(160, 16, 0xb7c3d1, 0xd5dde6); V.scene.add(V.gridObj);
   new ResizeObserver(viewerFit).observe(el);
   V.ready = true;
@@ -289,7 +388,7 @@ function viewerStatus(msg, loading) {
   el.querySelector("i").style.display = loading ? "" : "none";
   el.querySelector("span").textContent = msg;
 }
-function applyWire() { if (!V.mesh) return; V.mesh.traverse((o) => { if (o.isMesh) o.material.wireframe = V.wire; }); }
+function applyWire() { if (V.mesh) setWireframe(V.mesh, V.wire); }
 async function viewerShow(part) {
   $("cvEmpty").hidden = !!part;
   if (!part) { if (V.mesh) { V.scene.remove(V.mesh); V.mesh = null; } $("cvDim").hidden = true; return; }
@@ -301,13 +400,12 @@ async function viewerShow(part) {
     let obj;
     if (part.demoKind) { await sleep(250); obj = Demo.geometry(part.demoKind, part.params); }
     else {
-      const geo = new STLLoader().parse(await fetchStl(part, false));
-      geo.computeVertexNormals();
-      obj = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0xD3541F, metalness: 0.15, roughness: 0.45 }));
+      const geo = prepareStlGeometry(new STLLoader().parse(await fetchStl(part, false)));
       geo.center(); geo.rotateX(-Math.PI / 2);
+      obj = buildPartObject(geo, part.material);
     }
     if (token !== V.token) return;
-    if (V.mesh) V.scene.remove(V.mesh);
+    if (V.mesh) { V.scene.remove(V.mesh); disposeObject(V.mesh); }
     const wrap = new THREE.Group(); wrap.add(obj);
     const b0 = new THREE.Box3().setFromObject(wrap), size = b0.getSize(new THREE.Vector3());
     const k = 70 / (Math.max(size.x, size.y, size.z) || 1);
@@ -327,7 +425,7 @@ function groupLabel(ts) {
 }
 function renderSide() {
   const list = $("chatList");
-  const real = S.chats.filter((c) => c.messages.length);
+  const real = S.chats.filter((c) => c.messages.length || c.count);
   if (!real.length) { list.innerHTML = '<div class="chat-empty">Your designs will show up here. Start one with a message.</div>'; return; }
   let html = "", last = "";
   real.forEach((c) => {
@@ -368,7 +466,9 @@ function partCardHtml(c, part, isLatest) {
     `<div class="part-thumb">${thumbSvg(kindOf(part))}</div>` +
     `<div class="part-meta"><div class="part-title">${esc(part.title)} <span class="ver">v${v}</span>${anchored}</div><div class="part-specs">${chips}</div></div>` +
     `<span class="part-open">Open <svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px"><path d="M9 6l6 6-6 6"/></svg></span></button>` +
-    `<div class="part-actions"><button class="chip" data-export="${part.id}">Export STEP</button><button class="chip" data-part="${part.id}" data-tab="chain">Anchor on-chain</button></div></div>` +
+    `<div class="part-actions">` + (part.paid
+      ? `<button class="chip" data-export="${part.id}">Download files</button><button class="chip" data-part="${part.id}" data-tab="chain">Anchor on-chain</button>`
+      : `<button class="btn btn-primary btn-sm" data-generate="${part.id}">Generate files · ${part.generateCredits || 10} credits</button><span class="preview-tag">Free preview</span>`) + `</div></div>` +
     (isLatest ? followupsHtml(part) : "");
 }
 function followupsHtml(part) {
@@ -391,11 +491,17 @@ function renderThread(animateLast) {
     let extra = "";
     if (part) extra = partCardHtml(c, part, latest && latest.id === part.id && m === c.messages[c.messages.length - 1]);
     if (m.needCredits) extra = needCreditsHtml();
+    if (m.choices && m.choices.length && m === c.messages[c.messages.length - 1]) extra += choicesHtml(m.choices);
     return `<div class="msg">${ASSIST_AVA}<div class="reply" data-mid="${m.id}">${para(m.text)}${extra}</div></div>`;
   }).join("");
 }
+/* Guidance from the AI as tappable questions. A tap sends the question and the answer together. */
+function choicesHtml(choices) {
+  return '<div class="choices">' + choices.map((q) => `<div class="choice-q"><p>${esc(q.question)}</p><div class="followups">` +
+    q.options.map((o) => `<button class="chip" data-say="${esc(q.question + " " + o)}">${esc(o)}</button>`).join("") + "</div></div>").join("") + "</div>";
+}
 function needCreditsHtml() {
-  return `<div class="need-credits"><b>You are out of credits</b><p>Each new build uses 1 credit. Edits in the same chat stay free until the next build.</p><button class="btn btn-primary btn-sm" data-buy="open">Get credits</button></div>`;
+  return `<div class="need-credits"><b>You are out of credits</b><p>Generating the full files costs credits, and the price depends on the AI you used. Messages are free within each AI's daily allowance.</p><button class="btn btn-primary btn-sm" data-buy="open">Get credits</button></div>`;
 }
 function scrollEnd(smooth) { const t = $("thread"); t.scrollTo({ top: t.scrollHeight, behavior: smooth ? "smooth" : "auto" }); }
 
@@ -432,14 +538,23 @@ function renderCanvas() {
   if (!part) { panel.innerHTML = '<div class="chat-empty">Build a part to see its specs, files and on-chain record here.</div>'; return; }
   if (S.tab === "specs") {
     let rows = `<div class="row"><span>part_type</span><span>${esc(part.partType)}</span></div>`;
-    Object.entries(part.params).forEach(([k, v]) => { rows += `<div class="row"><span>${esc(k)}</span><span>${esc(v)}</span></div>`; });
+    Object.entries(part.params).forEach(([k, v]) => {
+      if (k === "parts" && Array.isArray(v)) { rows += `<div class="row"><span>parts</span><span>${v.length}</span></div>`; return; }
+      rows += `<div class="row"><span>${esc(k)}</span><span>${esc(v)}</span></div>`;
+    });
     if (part.material) rows += `<div class="row"><span>material</span><span>${esc(part.material)}</span></div>`;
     let notes = "";
     if (part.notes && part.notes.length) notes = `<div class="note"><b>Adjusted for manufacturability</b><ul>${part.notes.map((n) => `<li>${esc(n)}</li>`).join("")}</ul></div>`;
-    panel.innerHTML = `<div class="kv">${rows}</div>${notes}`;
+    panel.innerHTML = `<div class="kv">${rows}</div>${notes}${assemblyHtml(part)}`;
   } else if (S.tab === "files") {
-    const F = [["STEP", "step", "3D solid for CAD and CAM"], ["IGES", "iges", "3D solid, older systems"], ["DXF", "dxf", "2D cut layers for laser and CNC"], ["PDF", "pdf", "1:1 drawing"], ["STL", "stl", "Mesh for 3D printing"]];
-    panel.innerHTML = '<div class="files">' + F.map(([n, f, d]) => `<div class="file"><span class="ext">${n}</span><div class="what"><b>${n} file</b><span>${d}</span></div><button class="btn btn-ghost btn-sm" data-dl="${f}">Download</button></div>`).join("") + "</div>";
+    const F = [["STEP", "step", "3D solid for CAD and CAM"], ["IGES", "iges", "3D solid, older systems"], ["DXF", "dxf", "2D cut layers for laser and CNC"], ["PDF", "pdf", "1:1 drawing"], ["GLB", "glb", "3D model for web viewers, AR and game engines"], ["3MF", "3mf", "3D model for slicers and print services"], ["URDF", "urdf", "Robot description (zip) for ROS and simulators"], ["STL", "stl", "Mesh for 3D printing"]];
+    const lock = !part.paid;
+    const rowsF = part.partType === "assembly" ? F.filter((r) => r[1] !== "urdf") : F;   // a URDF is one rigid link
+    const banner = lock ? `<div class="note"><b>Free preview</b><p>You can look at this version and download the STL mesh for free. Press Generate to unlock the STEP, IGES, DXF, PDF, GLB and 3MF files. That costs ${part.generateCredits || 10} credits, once for this version.</p><button class="btn btn-primary btn-sm" data-generate="${part.id}">Generate files · ${part.generateCredits || 10} credits</button></div>` : "";
+    panel.innerHTML = banner + '<div class="files">' + rowsF.map(([n, f, d]) => {
+      const locked = lock && f !== "stl";
+      return `<div class="file${locked ? " locked" : ""}"><span class="ext">${n}</span><div class="what"><b>${n} file</b><span>${locked ? "Unlocks when you press Generate" : d}</span></div><button class="btn btn-ghost btn-sm" ${locked ? "disabled" : `data-dl="${f}"`}>${locked ? "Locked" : "Download"}</button></div>`;
+    }).join("") + "</div>" + (lock ? "" : checkCardHtml(part));
   } else {
     if (part.anchor) {
       const tx = part.anchor.anchor_tx || "";
@@ -451,6 +566,88 @@ function renderCanvas() {
         `<div class="fine">Costs a small network fee from your wallet. Separate from downloading.</div><button class="btn btn-primary" id="anchorBtn">Anchor on BOT Chain</button></div>`;
     }
   }
+}
+/* ============================================================ manufacturability check */
+const CHECK_PROCESSES = [["cnc", "CNC", "CNC machining"], ["sheet_metal", "Sheet metal", "sheet metal"], ["injection_molding", "Molding", "injection molding"], ["fdm", "FDM print", "FDM 3D printing"], ["resin", "Resin print", "resin 3D printing"]];
+const CHECK_TAG = { pass: ["OK", "ok"], warn: ["Review", "warn"], fail: ["Problem", "bad"], not_checked: ["Not checked", "nc"], info: ["Note", "info"] };
+function reportHtml(r) {
+  const rows = (r.checks || []).map((c) => {
+    const [label, cls] = CHECK_TAG[c.status] || CHECK_TAG.info;
+    const meta = c.measured ? `<small>${esc(c.measured)}${c.limit ? " · limit " + esc(c.limit) : ""}</small>` : "";
+    return `<div class="chk"><span class="chk-tag ${cls}">${label}</span><div><b>${esc(c.title)}</b><p>${esc(c.detail)}</p>${meta}</div></div>`;
+  }).join("");
+  const notes = (r.assumptions || []).concat(r.disclaimer ? [r.disclaimer] : []).map((a) => `<p class="rnote">${esc(a)}</p>`).join("");
+  return `<div class="report"><p class="rhead">${esc(r.headline || "")}</p>${rows}${notes}</div>`;
+}
+function checkCardHtml(part) {
+  if (part.partType === "assembly") return `<p class="rnote">The manufacturability check runs on single parts. Assemblies are not checked yet.</p>`;
+  const cur = S.checkProc || "cnc", saved = part.checks || {};
+  const price = (S.ai && S.ai.check_credits) || 5;
+  const label = (CHECK_PROCESSES.find((p) => p[0] === cur) || CHECK_PROCESSES[0])[2];
+  const chips = CHECK_PROCESSES.map(([id, short]) => `<button class="chip${id === cur ? " on" : ""}" data-proc="${id}">${short}${saved[id] ? " · done" : ""}</button>`).join("");
+  const body = saved[cur] ? reportHtml(saved[cur])
+    : `<p>Checks this version against general rules for ${label}, such as wall thickness, corners, holes, draft or overhangs. It runs no AI and reads the part's mesh and dimensions. Guidance only, not a certified review.</p><button class="btn btn-primary btn-sm" data-check="${cur}">Run check · ${price} credits</button>`;
+  return `<div class="check-card"><div class="kick">Manufacturability check</div><div class="followups">${chips}</div>${body}</div>`;
+}
+/* The Specs-tab section for an assembly: its parts with positions and mass, then the findings.
+   Positions come from the stored parts list, mass and size from the report the build produced. */
+function assemblyHtml(part) {
+  if (part.partType !== "assembly") return "";
+  const r = part.assembly, list = (part.params && part.params.parts) || [];
+  const by = {}; if (r) r.parts.forEach((p) => { by[p.name] = p; });
+  const rows = list.map((p) => {
+    const m = by[p.name] || {};
+    return `<tr><td>${esc(p.name)}</td><td>${esc(p.part_type)}</td><td>${esc((p.position || []).map((n) => +(+n).toFixed(1)).join(", "))}</td>` +
+      `<td>${m.size_mm ? esc(m.size_mm.map((n) => +(+n).toFixed(1)).join(" x ")) : ""}</td><td>${m.mass_g != null ? esc(m.mass_g + " g") : ""}</td></tr>`;
+  }).join("");
+  const findings = r ? r.findings.map((f) => {
+    const [label, cls] = CHECK_TAG[f.status] || CHECK_TAG.info;
+    return `<div class="chk"><span class="chk-tag ${cls}">${label}</span><div><b>${esc(f.title)}</b><p>${esc(f.detail)}</p></div></div>`;
+  }).join("") : "";
+  const notes = r ? (r.assumptions || []).map((a) => `<p class="rnote">${esc(a)}</p>`).join("") : "";
+  return `<div class="check-card asm"><div class="kick">Assembly</div>${r ? `<p class="rhead">${esc(r.summary)}</p>` : ""}` +
+    `<div class="tbl"><table><thead><tr><th>Part</th><th>Type</th><th>Position mm</th><th>Size mm</th><th>Mass</th></tr></thead><tbody>${rows}</tbody></table></div>${findings}${notes}</div>`;
+}
+function demoReport(process) {
+  return { process, process_label: process, headline: "0 problems, 1 to review, 2 passed, 1 not checked.", disclaimer: "Demo data, not a real check.",
+    checks: [{ id: "closed", title: "Mesh is closed", status: "pass", detail: "Every edge is shared by two triangles." },
+             { id: "walls", title: "Thin walls", status: "warn", detail: "Some spots are thinner than the general minimum.", measured: "thinnest 0.7 mm", limit: "0.8 mm" },
+             { id: "holes", title: "Hole depth to diameter", status: "pass", detail: "A standard drill reaches this depth." },
+             { id: "access", title: "Tool access, setups and tolerances", status: "not_checked", detail: "These need a machining plan." }] };
+}
+async function runCheck(btn, part, proc) {
+  const c = chat();
+  if (!c || S.checking) return;
+  S.checking = true; const label = btn.textContent; btn.disabled = true; btn.textContent = "Checking";
+  try {
+    const r = await Backend.check(c, part, proc);
+    if (r.authExpired) { toast("Your session expired. Sign in again."); return; }
+    if (r.needCredits) { toast(r.detail || "You are out of credits."); openCredits(); return; }
+    if (r.error) { toast(r.error); return; }
+    part.checks = part.checks || {}; part.checks[proc] = r.report; save();
+    if (r.balance != null) setBalance(r.balance); else refreshBalance();
+    toast(r.charged ? `Check done. ${r.charged} credits used.` : "Check opened.");
+    renderCanvas();
+  } catch (err) { toast(err.message || "Could not run the check."); }
+  finally { S.checking = false; if (btn.isConnected) { btn.disabled = false; btn.textContent = label; } }
+}
+
+/* Press Generate: pay once for this version and unlock its full files. */
+async function generateFiles(btn, partId) {
+  const c = chat(), part = c && partOf(c, partId);
+  if (!part || part.paid || S.generating) return;
+  S.generating = true; const label = btn.textContent; btn.disabled = true; btn.textContent = "Generating";
+  try {
+    const r = await Backend.generate(c, part);
+    if (r.authExpired) { toast("Your session expired. Sign in again."); return; }
+    if (r.needCredits) { toast(r.detail || "You are out of credits."); openCredits(); return; }
+    if (r.error) { toast(r.error); return; }
+    part.paid = true; save();
+    if (r.balance != null) setBalance(r.balance); else refreshBalance();
+    toast(r.charged === 0 ? "Files unlocked." : `Files unlocked. ${r.charged} credit${r.charged === 1 ? "" : "s"} used.`);
+    renderThread(); renderCanvas();
+  } catch (err) { toast(err.message || "Could not generate the files."); }
+  finally { S.generating = false; if (btn.isConnected) { btn.disabled = false; btn.textContent = label; } }
 }
 function openCanvas(partId, tab) {
   const c = chat(); if (!c) return;
@@ -465,42 +662,84 @@ function openCanvas(partId, tab) {
 function closeCanvas() { $("app").classList.remove("canvas-open"); $("scrim").classList.remove("on"); }
 
 /* ============================================================ sending */
-async function send(text) {
+async function send(text, templateId) {
   text = (text || "").trim();
   if (!text || S.busy) return;
   let c = chat();
   if (!c) { c = newChat(); S.activeId = c.id; }
-  const prior = lastPart(c);
   c.messages.push({ id: uid(), role: "user", text });
   if (c.title === "New design") c.title = text.length > 44 ? text.slice(0, 42).trim() + "..." : text;
   c.updatedAt = Date.now();
-  $("input").value = ""; autosize(); $("send").disabled = true;
+  if (!templateId) { $("input").value = ""; autosize(); }
+  $("send").disabled = true;
   S.busy = true; renderThread(); renderSide(); $("chatTitle").textContent = c.title; scrollEnd(false); showWorking();
   let out;
-  try { out = await Backend.send({ text, lastPart: prior }); } catch (e) { out = { reply: "Something went wrong on my side. Please try again.", error: true }; }
+  try {
+    if (!DEMO && !c.remote) {   // the first message creates the chat on the server
+      const created = await api("POST", "/chats", {});
+      if (created.authExpired) { out = { authExpired: true }; }
+      else if (!created.ok) { out = { reply: created.detail || "I could not start a new chat. Please try again.", error: true }; }
+      else { c.id = created.data.id; c.remote = true; S.activeId = c.id; }
+    }
+    if (!out) out = templateId ? await Backend.applyTemplate({ chat: c, id: templateId, text }) : await Backend.send({ chat: c, text });
+  } catch (e) { out = { reply: "Something went wrong on my side. Please try again.", error: true }; }
   hideWorking(); S.busy = false;
   if (out.authExpired) { Auth.clearSession(); c.messages.pop(); toast("Your session expired. Sign in again."); save(); route(); return; }
   const msg = { id: uid(), role: "assistant", text: out.reply || "" };
-  if (out.needCredits) { msg.text = "I need a credit to build this."; msg.needCredits = true; }
+  if (out.needCredits) msg.needCredits = true;
+  if (out.choices && out.choices.length) msg.choices = out.choices;
   if (out.part) { c.parts[out.part.id] = out.part; msg.partId = out.part.id; S.activePartId = out.part.id; }
   c.messages.push(msg); c.updatedAt = Date.now(); save();
+  if (out.balance != null) setBalance(out.balance);
+  refreshAi();
   renderThread(); renderSide(); scrollEnd(true);
-  if (out.part) { if (!DEMO) refreshBalance(); openCanvas(out.part.id, "specs"); if (innerWidth <= 1180) { /* on small screens keep the chat in view, the card opens the sheet */ closeCanvas(); } }
+  if (out.part) { openCanvas(out.part.id, "specs"); if (innerWidth <= 1180) closeCanvas(); }
   $("send").disabled = !$("input").value.trim();
 }
 
 /* ============================================================ credits */
-async function refreshBalance() {
-  if (DEMO) { S.balance = 24; } else { S.balance = await Auth.fetchBalance(); }
-  const n = $("creditNum"); n.textContent = S.balance == null ? "-" : S.balance.toLocaleString();
-  $("creditChip").classList.toggle("low", S.balance != null && S.balance <= 2);
+function setBalance(b) {
+  S.balance = b;
+  $("creditNum").textContent = b == null ? "-" : b.toLocaleString();
+  $("creditChip").classList.toggle("low", b != null && b <= 2);
 }
+async function refreshBalance() { setBalance(DEMO ? 24 : await Auth.fetchBalance()); }
+/* ============================================================ templates */
+const DEMO_TEMPLATES = { categories: [{ id: "standard_parts", label: "Standard parts" }, { id: "assemblies", label: "Assemblies" }],
+  templates: [{ id: "bearing-608", title: "608 ball bearing", category: "standard_parts", category_label: "Standard parts", summary: "8 mm bore, 22 mm outside, 7 mm wide.", tags: ["Standard size"], hint: "Try: make the bore 10 mm", part_type: "bearing", parts: 1 },
+    { id: "asm-gear-shaft", title: "Gear on a shaft", category: "assemblies", category_label: "Assemblies", summary: "A 20 tooth gear fitted on an 8 mm shaft.", tags: ["2 parts"], hint: "Try: use 30 teeth", part_type: "assembly", parts: 2 }] };
+async function openTemplates() {
+  const data = await Backend.templates();
+  if (!data) { toast("I could not load the templates. Try again."); return; }
+  const m = document.createElement("div"); m.className = "modal"; m.id = "tplModal";
+  let cat = "all", q = "";
+  const draw = () => {
+    const cards = data.templates.filter((t) => (cat === "all" || t.category === cat) && (!q || (t.title + " " + t.summary + " " + t.tags.join(" ")).toLowerCase().includes(q)));
+    m.querySelector(".tpl-grid").innerHTML = cards.length ? cards.map((t) =>
+      `<div class="tpl"><b>${esc(t.title)}</b><span class="muted">${esc(t.summary)}</span><div class="followups">` +
+      `<span class="tag">${esc(t.category_label)}</span>${t.tags.map((g) => `<span class="tag">${esc(g)}</span>`).join("")}</div>` +
+      `<button class="btn btn-primary btn-sm" data-tpl="${esc(t.id)}" data-title="${esc(t.title)}">Use template</button></div>`).join("") : "<p class=\"muted\">No templates match.</p>";
+    m.querySelectorAll("[data-cat]").forEach((b) => b.classList.toggle("on", b.dataset.cat === cat));
+  };
+  m.innerHTML = `<div class="modal-card tpl-card"><h3>Templates</h3><p>Start from a known part, then change it by chat. A template is a free preview, and no AI is used.</p>` +
+    `<input type="search" id="tplSearch" placeholder="Search, for example bracket" aria-label="Search templates"><div class="followups"><button class="chip" data-cat="all">All</button>` +
+    data.categories.map((c) => `<button class="chip" data-cat="${esc(c.id)}">${esc(c.label)}</button>`).join("") + `</div><div class="tpl-grid"></div>` +
+    `<div class="modal-foot"><button class="btn btn-ghost btn-sm" data-close>Close</button></div></div>`;
+  document.body.appendChild(m); draw();
+  m.addEventListener("input", (e) => { if (e.target.id === "tplSearch") { q = e.target.value.trim().toLowerCase(); draw(); } });
+  m.addEventListener("click", async (e) => {
+    if (e.target === m || e.target.closest("[data-close]")) { m.remove(); return; }
+    const c = e.target.closest("[data-cat]"); if (c) { cat = c.dataset.cat; draw(); return; }
+    const t = e.target.closest("[data-tpl]"); if (t) { m.remove(); await send("Start from the template: " + t.dataset.title, t.dataset.tpl); }
+  });
+}
+
 async function openCredits() {
   let cfg = null;
   try { cfg = DEMO ? { credit_price_bot: 0.01, pack_1000_price_bot: 1, pack_1000_credits: 1000, pack_10000_price_bot: 10, pack_10000_credits: 10000 } : await Auth.getChainConfig(); } catch (e) { toast("Could not load pricing. Try again shortly."); return; }
   const tiers = [["single", "1 credit", cfg.credit_price_bot], ["pack_1000", (cfg.pack_1000_credits || 1000).toLocaleString() + " credits", cfg.pack_1000_price_bot], ["pack_10000", (cfg.pack_10000_credits || 10000).toLocaleString() + " credits", cfg.pack_10000_price_bot]];
   const m = document.createElement("div"); m.className = "modal"; m.setAttribute("role", "dialog"); m.setAttribute("aria-modal", "true");
-  m.innerHTML = `<div class="modal-card"><h3>Get credits</h3><p>Paid in native BOT on BOT Chain. A build uses 1 credit, and every export format is included.</p>` +
+  m.innerHTML = `<div class="modal-card"><h3>Get credits</h3><p>Paid in native BOT on BOT Chain. Generating the files for a version costs 2 to 40 credits depending on the AI, and every export format is included. Messages are free within each AI's daily allowance.</p>` +
     tiers.map(([id, label, price]) => `<div class="tier"><div><b>${label}</b><span>${price} BOT</span></div><button class="btn btn-primary btn-sm" data-tier="${id}">Buy</button></div>`).join("") +
     `<div class="modal-foot"><button class="btn btn-ghost btn-sm" data-close>Close</button></div></div>`;
   document.body.appendChild(m);
@@ -537,21 +776,38 @@ $("tGrid").addEventListener("click", (e) => { V.grid = !V.grid; e.currentTarget.
 $("cvVersion").addEventListener("change", (e) => { S.activePartId = e.target.value; renderCanvas(); viewerShow(partOf(chat(), S.activePartId)); });
 document.querySelector(".tabs").addEventListener("click", (e) => { const t = e.target.closest(".tab"); if (!t) return; S.tab = t.dataset.tab; renderCanvas(); });
 
-$("chatList").addEventListener("click", (e) => {
+$("chatList").addEventListener("click", async (e) => {
   const del = e.target.closest("[data-del]");
-  if (del) { if (confirm("Delete this design chat?")) { S.chats = S.chats.filter((c) => c.id !== del.dataset.del); if (S.activeId === del.dataset.del) { S.activeId = null; S.activePartId = null; closeCanvas(); } save(); renderAll(); } return; }
+  if (del) {
+    if (!confirm("Delete this design chat?")) return;
+    const id = del.dataset.del, c = S.chats.find((x) => x.id === id);
+    if (c && c.remote) { const r = await api("DELETE", `/chats/${id}`); if (!r.ok && !r.authExpired) { toast(r.detail || "Could not delete that chat."); return; } }
+    S.chats = S.chats.filter((x) => x.id !== id);
+    if (S.activeId === id) { S.activeId = null; S.activePartId = null; closeCanvas(); }
+    save(); renderAll(); return;
+  }
   const open = e.target.closest("[data-open]");
-  if (open) { S.activeId = open.dataset.open; const p = lastPart(chat()); S.activePartId = p ? p.id : null; closeSide(); closeCanvas(); renderAll(); scrollEnd(false); }
+  if (open) {
+    const c = S.chats.find((x) => x.id === open.dataset.open); if (!c) return;
+    closeSide(); closeCanvas();
+    if (!c.loaded) { S.activeId = c.id; $("threadInner").innerHTML = '<div class="chat-empty">Opening chat...</div>'; if (!(await loadChat(c))) { S.activeId = null; renderAll(); route(); return; } }
+    S.activeId = c.id; const p = lastPart(c); S.activePartId = p ? p.id : null;
+    renderAll(); scrollEnd(false);
+  }
 });
 $("threadInner").addEventListener("click", async (e) => {
   const say = e.target.closest("[data-say]"); if (say) { send(say.dataset.say); return; }
   const buy = e.target.closest("[data-buy]"); if (buy) { openCredits(); return; }
+  const gen = e.target.closest("[data-generate]"); if (gen) { await generateFiles(gen, gen.dataset.generate); return; }
   const ex = e.target.closest("[data-export]");
   if (ex) { S.activePartId = ex.dataset.export; openCanvas(ex.dataset.export, "files"); return; }
   const pt = e.target.closest("[data-part]"); if (pt) openCanvas(pt.dataset.part, pt.dataset.tab || "specs");
 });
 $("panel").addEventListener("click", async (e) => {
   const c = chat(), part = c && partOf(c, S.activePartId); if (!part) return;
+  const gen = e.target.closest("[data-generate]"); if (gen) { await generateFiles(gen, part.id); return; }
+  const proc = e.target.closest("[data-proc]"); if (proc) { S.checkProc = proc.dataset.proc; renderCanvas(); return; }
+  const chk = e.target.closest("[data-check]"); if (chk) { await runCheck(chk, part, chk.dataset.check); return; }
   const dl = e.target.closest("[data-dl]");
   if (dl) {
     dl.disabled = true; const t = dl.textContent; dl.textContent = "Building";
@@ -593,12 +849,56 @@ function fillAccount() {
   $("acctName").textContent = name; $("avatar").textContent = (name.replace(/^0x/, "")[0] || "N");
   $("acctSub").textContent = DEMO ? "Sample data" : (s && s.email ? "Google" : "Wallet");
 }
+/* ============================================================ AI picker */
+const DEMO_AI = { default: "basic:deepseek", check_credits: 5, tiers: [
+  { id: "engine", label: "Engine", messages_per_day: null, messages_left: null, generate_credits: 2, models: [{ id: "engine:rules", label: "No AI (engine only)", available: true }] },
+  { id: "basic", label: "Basic", messages_per_day: 40, messages_left: 40, generate_credits: 10, models: [{ id: "basic:deepseek", label: "DeepSeek", available: true }] },
+  { id: "plus", label: "Plus", messages_per_day: 15, messages_left: 15, generate_credits: 25, models: [{ id: "plus:gpt", label: "GPT", available: true }, { id: "plus:qwen", label: "Qwen", available: true }] },
+  { id: "advanced", label: "Advanced", messages_per_day: 4, messages_left: 4, generate_credits: 40, models: [{ id: "advanced:claude", label: "Claude", available: true }] }
+] };
+try { S.model = localStorage.getItem("nitocad_studio_model") || "basic:deepseek"; } catch (e) { S.model = "basic:deepseek"; }
+let aiBound = false;
+async function loadAi() {
+  if (DEMO) S.ai = DEMO_AI;
+  else {
+    if (!Auth.getSession()) return;
+    const r = await api("GET", "/ai/models");
+    if (!r.ok) return;
+    S.ai = r.data;
+  }
+  const usable = S.ai.tiers.flatMap((t) => t.models.filter((m) => m.available).map((m) => m.id));
+  if (!usable.includes(S.model)) S.model = S.ai.default;
+  if (!aiBound) {
+    aiBound = true;
+    const tb = $("tplBtn"); if (tb) tb.addEventListener("click", openTemplates);
+    $("aiModel").addEventListener("change", (e) => {
+      S.model = e.target.value;
+      try { localStorage.setItem("nitocad_studio_model", S.model); } catch (err) { /* private mode */ }
+      renderAiBar();
+    });
+  }
+  renderAiBar();
+}
+function refreshAi() { loadAi().catch(() => {}); }
+function renderAiBar() {
+  if (!S.ai) return;
+  const sel = $("aiModel");
+  sel.innerHTML = S.ai.tiers.map((t) => `<optgroup label="${esc(t.label)} · Generate ${t.generate_credits} credits">` +
+    t.models.map((m) => `<option value="${esc(m.id)}"${m.available ? "" : " disabled"}${m.id === S.model ? " selected" : ""}>${esc(m.label)}${m.available ? "" : " (not set up yet)"}</option>`).join("") + "</optgroup>").join("");
+  const t = S.ai.tiers.find((x) => x.models.some((m) => m.id === S.model)) || S.ai.tiers[0];
+  const left = t.messages_per_day == null ? "No daily limit" : `${t.messages_left} of ${t.messages_per_day} messages left today`;
+  $("aiNote").textContent = `${left} · Generate ${t.generate_credits} credits`;
+}
+
+async function loadConfig() {
+  document.querySelector(".fineprint").textContent = "Messages are free within each AI's daily allowance. Generating the full files costs credits, shown on the button. Check dimensions before you manufacture.";
+}
 let booted = false;
 function route() {
   const signed = DEMO || !!Auth.getSession();
   if (!signed) { showGate(true); booted = false; Auth.initGoogle([$("gateGoogle")]); return; }
   showGate(false);
-  if (!booted) { booted = true; load(); fillAccount(); refreshBalance(); renderAll(); if (!IS_TOUCH) $("input").focus(); }
+  if (!booted) { booted = true; fillAccount(); refreshBalance(); loadConfig(); loadAi(); load().then(() => { if (!Auth.getSession() && !DEMO) return route(); renderAll(); if (!IS_TOUCH) $("input").focus(); }); }
 }
 Auth.onChange(() => route());
 route();
