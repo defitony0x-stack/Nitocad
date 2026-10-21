@@ -23,7 +23,7 @@ function boot() {
   host.appendChild(renderer.domElement);
   stage.classList.add("bp-live");
 
-  const COL = { line: 0xbfd3f2, lineSolid: 0x3a4658, dim: 0xff8f5e, grid: 0xc9a24b };
+  const COL = { line: 0xcfd0d4, lineSolid: 0x3a3a3e, dim: 0xc9c9ce, grid: 0x8a8a90 };
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(30, 1.25, 0.1, 400);
   const envTex = (() => { const c = document.createElement("canvas"); c.width = 256; c.height = 128; const g = c.getContext("2d"), gr = g.createLinearGradient(0, 0, 0, 128); gr.addColorStop(0, "#7fa8e6"); gr.addColorStop(0.46, "#e9eef5"); gr.addColorStop(0.5, "#8a8f98"); gr.addColorStop(1, "#2b313b"); g.fillStyle = gr; g.fillRect(0, 0, 256, 128); g.fillStyle = "#fff"; g.fillRect(150, 14, 56, 26); const t = new THREE.CanvasTexture(c); t.mapping = THREE.EquirectangularReflectionMapping; t.colorSpace = THREE.SRGBColorSpace; return t; })();

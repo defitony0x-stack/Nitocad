@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,700;1,9..144,500&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-  :root{--ink:#0B2545;--ink-soft:#48607E;--orange:#D3541F;--orange-deep:#A83E15;--paper:#FBF8F3;--fog:#EDF2F4;--line:#E3DED3;--ok:#13794f;--bad:#b3261e;--radius:12px;}
+  :root{--ink:#1C1C1E;--ink-soft:#5E5E63;--orange:#1C1C1E;--dot:#E8601C;--orange-deep:#0E0E10;--paper:#FAFAF8;--fog:#F0F0EE;--line:#E3E3E0;--ok:#13794f;--bad:#b3261e;--radius:12px;}
   *{box-sizing:border-box;}
   body{margin:0;background:var(--paper);color:var(--ink);font-family:'IBM Plex Sans',sans-serif;-webkit-font-smoothing:antialiased;line-height:1.5;}
   a{color:var(--orange-deep);}
@@ -19,7 +19,7 @@
   header{border-bottom:1px solid var(--line);}
   header .wrap{display:flex;align-items:center;justify-content:space-between;height:64px;}
   .logo{font-family:'Fraunces',serif;font-style:italic;font-size:1.4rem;text-decoration:none;color:var(--ink);}
-  .logo span{color:var(--orange);}
+  .logo span{color:var(--dot);}
   nav a{margin-left:18px;text-decoration:none;color:var(--ink-soft);font-size:.92rem;font-weight:500;}
   main{padding:28px 0 72px;}
   h1{font-size:2.1rem;margin-bottom:6px;}
@@ -61,7 +61,7 @@
 <script src="theme.js"></script>
 </head>
 <body>
-<header><div class="wrap"><a href="index.html" class="logo">Nito<span>CAD</span></a>
+<header><div class="wrap"><a href="index.html" class="logo">Nit<span>o</span>CAD</a>
 <nav><a href="studio.html">CAD Studio</a><a href="pricing.html">Pricing</a><a href="exports.html">Exports</a></nav></div></header>
 
 <main><div class="wrap">
@@ -351,7 +351,7 @@ $("btnAlign").onclick = () => run($("btnAlign"), $("o-road"), async () => {
   const r = await call("/civil/alignment", "POST", { ...a, station_interval_m: num("t_int"), lane_width_m: num("t_lane"), crossfall_pct: num("t_cf"), criteria: criteria() });
   if (r.error) return fail(r);
   const st = r.data.stations;
-  return alignView(r.data) + "<h3 style='margin-top:14px'>Design profile</h3>" + chart([{ name: "Design level (m)", color: "#D3541F", pts: st.map((s) => [s.station, s.design_z]) }], "station (m)", "level") +
+  return alignView(r.data) + "<h3 style='margin-top:14px'>Design profile</h3>" + chart([{ name: "Design level (m)", color: "#1C1C1E", pts: st.map((s) => [s.station, s.design_z]) }], "station (m)", "level") +
     "<h3 style='margin-top:14px'>Stations</h3>" + table(["Station", "Easting", "Northing", "Bearing", "Design level", "Grade %"], st.map((s) => [f(s.station, 1), f(s.x, 2), f(s.y, 2), f(s.bearing_deg, 2), f(s.design_z, 3), f(s.grade_pct, 2)]));
 });
 $("btnEarth").onclick = () => run($("btnEarth"), $("o-road"), async () => {
@@ -371,7 +371,7 @@ $("btnEarth").onclick = () => run($("btnEarth"), $("o-road"), async () => {
     ["Carriageway area (m2)", f(q.carriageway_area_m2, 0)], ["Shoulder area (m2)", f(q.shoulder_area_m2, 0)], ["Kerb length (m)", f(q.kerb_length_m, 0)],
     ["Topsoil strip area (m2)", f(q.topsoil_strip_area_m2, 0)], ["Topsoil strip volume (m3)", f(q.topsoil_strip_volume_m3, 0)]]) +
     warns(d.warnings) + warns(d.survey.warnings) + "<h3 style='margin-top:14px'>Pavement layers</h3>" + table(["Layer", "Thickness (m)", "Volume (m3)"], layers) +
-    "<h3 style='margin-top:14px'>Ground and formation</h3>" + chart([{ name: "Ground (m)", color: "#48607E", pts: st.map((s) => [s.station, s.ground_z]) }, { name: "Formation (m)", color: "#D3541F", pts: st.map((s) => [s.station, s.formation_z]) }], "station (m)", "level") +
+    "<h3 style='margin-top:14px'>Ground and formation</h3>" + chart([{ name: "Ground (m)", color: "#5E5E63", pts: st.map((s) => [s.station, s.ground_z]) }, { name: "Formation (m)", color: "#1C1C1E", pts: st.map((s) => [s.station, s.formation_z]) }], "station (m)", "level") +
     "<h3 style='margin-top:14px'>Mass haul ordinate</h3>" + chart([{ name: "Cumulative cut minus fill (m3)", color: "#13794f", pts: st.map((s) => [s.station, s.mass_ordinate_m3]) }], "station (m)", "volume") +
     "<h3 style='margin-top:14px'>Sections</h3>" + table(["Station", "Ground", "Formation", "Cut area", "Fill area", "Cut vol", "Fill vol", "Catch L", "Catch R"],
       st.map((s) => [f(s.station, 1), f(s.ground_z, 2), f(s.formation_z, 2), f(s.cut_area_m2, 2), f(s.fill_area_m2, 2), f(s.cut_volume_m3, 1), f(s.fill_volume_m3, 1), f(s.left_catch_offset_m, 1), f(s.right_catch_offset_m, 1)])) +

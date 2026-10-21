@@ -12,7 +12,7 @@
     root.setAttribute('data-theme', t);
     var m = document.querySelector('meta[name="theme-color"]');
     if (!m && document.head) { m = document.createElement('meta'); m.name = 'theme-color'; document.head.appendChild(m); }
-    if (m) m.setAttribute('content', t === 'dark' ? '#0A111C' : '#FBF8F3');
+    if (m) m.setAttribute('content', t === 'dark' ? '#111112' : '#FAFAF8');
     var b = document.querySelector('.theme-toggle');
     if (b) {
       b.setAttribute('aria-pressed', t === 'dark' ? 'true' : 'false');

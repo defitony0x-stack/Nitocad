@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var API_BASE = "https://nitocad-production-2df5.up.railway.app";
+  var API_BASE = (window.NITOCAD_CONFIG && window.NITOCAD_CONFIG.apiBase) || "https://nitocad-production-2df5.up.railway.app";
   var SESSION_KEY = "nitocad_wallet_session_" + API_BASE;
 
   // Payment destination and chain params are pinned in the frontend so a backend change

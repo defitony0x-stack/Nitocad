@@ -1,6 +1,6 @@
 /* NitoCAD Studio: front end only.
    Preview first, pay when you generate: every message builds a free preview, and a part's full
-   files (STEP, IGES, DXF, PDF, GLB, 3MF) unlock when the person presses Generate, which spends credits.
+   files (STEP, IGES, DXF, PDF) unlock when the person presses Generate, which spends credits.
    The price depends on the AI tier that planned the version, and each tier has a daily allowance of messages.
    All backend calls go through the `Backend` object near the top. When the chat backend
    changes, replace `Backend.send` and `Backend.anchor` and leave the rest alone.
@@ -39,23 +39,6 @@ const Backend = {
       needCredits: !!d.needs_credits, balance: d.balance,
       choices: (d.assistant_message.meta && d.assistant_message.meta.choices) || []
     };
-  },
-
-  /* The template picker's cards. */
-  async templates() {
-    if (DEMO) return DEMO_TEMPLATES;
-    const r = await api("GET", "/templates");
-    return r.ok ? r.data : null;
-  },
-
-  /* Start a part from a template: a free preview, no AI. Same reply shape as send(). */
-  async applyTemplate({ chat, id, text }) {
-    if (DEMO) return Demo.send(text, lastPart(chat));
-    const r = await api("POST", `/chats/${chat.id}/templates/${id}`);
-    if (r.authExpired) return { authExpired: true };
-    if (!r.ok) return { reply: r.detail || "I could not start that template. Please try again.", error: true };
-    const d = r.data;
-    return { reply: d.assistant_message.content, part: d.part ? fromServerPart(d.part) : null, balance: d.balance, choices: [] };
   },
 
   async anchor(part) {
@@ -107,16 +90,6 @@ const Backend = {
     return { ok: true, balance: r.data.balance, charged: r.data.charged };
   },
 
-  /* Manufacturability check for one process: paid once per version and process, then reopened free. */
-  async check(chat, part, process) {
-    if (DEMO) { await sleep(800); return { ok: true, charged: 5, balance: S.balance == null ? 19 : S.balance - 5, report: demoReport(process) }; }
-    const r = await api("POST", `/chats/${chat.id}/parts/${part.id}/check`, { process });
-    if (r.authExpired) return { authExpired: true };
-    if (r.status === 402) return { needCredits: true, detail: r.detail };
-    if (!r.ok) return { error: r.detail || "I could not run the check. Please try again." };
-    return { ok: true, report: r.data.report, charged: r.data.charged, balance: r.data.balance };
-  },
-
   async buyCredits(tier) {
     const cfg = await Auth.getChainConfig();
     const price = tier === "single" ? cfg.credit_price_bot : tier === "pack_1000" ? cfg.pack_1000_price_bot : cfg.pack_10000_price_bot;
@@ -145,17 +118,24 @@ function flatParams(p) {
   return out;
 }
 function collectNotes(data) {
-  const v = data.validation || {}, notes = [];
-  (v.warnings || []).forEach((w) => notes.push(String(w)));
-  Object.entries(v.corrections || {}).forEach(([k, c]) => notes.push(`${k}: ${c.old} to ${c.new}`));
+  const v = data.validation || {}, ws = (v.warnings || []).map(String), notes = [...new Set(ws)];
+  const nums = (s) => (String(s).match(/-?\d+(?:\.\d+)?/g) || []).map(Number);
+  const has = (n, x) => n.some((y) => Math.abs(y - Number(x)) < 1e-6);
+  // a warning that already states the old and new value covers its correction, so say it once
+  Object.entries(v.corrections || {}).forEach(([k, c]) => { if (!ws.some((w) => { const n = nums(w); return has(n, c.old) && has(n, c.new); })) notes.push(`${k}: ${c.old} to ${c.new}`); });
   return notes;
 }
 function titleFor(t) { return String(t || "part").replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase()); }
 function replyFor(part, isEdit) {
   const n = Object.keys(part.params).length;
   let s = isEdit ? `Updated. This is a new free preview of the ${part.title} with your change applied.` : `Here is a free preview of your ${part.title}, built as a solid with ${n} parameter${n === 1 ? "" : "s"}.`;
-  if (part.notes && part.notes.length) s += `\n\nI adjusted a few values to keep it manufacturable. The details are under Specs.`;
-  s += `\n\nTell me what to change, as often as you like. When it looks right, press Generate for the STEP, IGES, DXF, PDF, GLB and 3MF files.`;
+  if (part.notes && part.notes.length) {
+    const kept = part.notes.filter((n) => String(n).includes("Kept as you typed")).length;
+    s += kept === part.notes.length ? `\n\nI kept the sizes you typed and flagged a few that may cause problems. The details are under Specs.`
+      : kept ? `\n\nI adjusted some values and flagged others you typed. The details are under Specs.`
+      : `\n\nI adjusted a few values to keep it manufacturable. The details are under Specs.`;
+  }
+  s += `\n\nTell me what to change, as often as you like. When it looks right, press Generate for the STEP, IGES, DXF and PDF files.`;
   return s;
 }
 
@@ -179,7 +159,7 @@ function fromServerPart(p) {
   const spec = p.spec || {};
   const tx = p.anchor_tx || null;
   return {
-    id: p.id, version: p.version, jobId: p.job_id, title: p.title, partType: p.part_type, paid: p.paid !== false, checks: p.checks || {}, assembly: p.assembly || null, generateCredits: p.generate_credits || 10, aiTier: p.ai_tier || "basic",
+    id: p.id, version: p.version, jobId: p.job_id, title: p.title, partType: p.part_type, paid: p.paid !== false, generateCredits: p.generate_credits || 10, aiTier: p.ai_tier || "basic",
     params: flatParams({ parameters: spec.parameters || {} }), material: spec.material || "", notes: p.notes || [],
     description: "", spec, anchor: tx ? { anchor_tx: tx, explorer_url: Auth.PINNED_CHAIN.explorer_url + "/tx/" + tx } : null
   };
@@ -324,11 +304,11 @@ function deliver(url, filename) {
 function saveBar(url, filename) {
   const old = $("saveBar"); if (old) old.remove();
   const bar = document.createElement("div"); bar.id = "saveBar";
-  bar.style.cssText = "position:fixed;left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px));z-index:200;background:#111827;color:#fff;border-radius:14px;padding:12px 14px;display:flex;gap:10px;align-items:center;font-size:.85rem;";
+  bar.style.cssText = "position:fixed;left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px));z-index:200;background:#1C1C1C;color:#fff;border-radius:14px;padding:12px 14px;display:flex;gap:10px;align-items:center;font-size:.85rem;";
   bar.innerHTML = `<span style="flex:1;min-width:0;word-break:break-all">Download started. Not saving? ${esc(filename)}</span>`;
   const a = document.createElement("a"); a.href = url; a.textContent = "Tap to save"; a.setAttribute("download", filename);
   a.style.cssText = "background:#13A57D;color:#fff;padding:9px 14px;border-radius:999px;font-weight:600;text-decoration:none;white-space:nowrap";
-  const x = document.createElement("button"); x.textContent = "\u2715"; x.setAttribute("aria-label", "Dismiss"); x.style.cssText = "background:none;border:0;color:#9ca3af;font-size:18px";
+  const x = document.createElement("button"); x.textContent = "\u2715"; x.setAttribute("aria-label", "Dismiss"); x.style.cssText = "background:none;border:0;color:#A6A6A6;font-size:18px";
   x.onclick = () => bar.remove(); a.onclick = () => setTimeout(() => bar.remove(), 1500);
   bar.append(a, x); document.body.appendChild(bar); setTimeout(() => bar.remove(), 25000);
 }
@@ -389,6 +369,20 @@ function viewerStatus(msg, loading) {
   el.querySelector("span").textContent = msg;
 }
 function applyWire() { if (V.mesh) setWireframe(V.mesh, V.wire); }
+function viewerPlace(obj) {
+  if (V.mesh) { V.scene.remove(V.mesh); disposeObject(V.mesh); }
+  const wrap = new THREE.Group(); wrap.add(obj);
+  const b0 = new THREE.Box3().setFromObject(wrap), size = b0.getSize(new THREE.Vector3());
+  const k = 70 / (Math.max(size.x, size.y, size.z) || 1);
+  wrap.scale.setScalar(k);
+  const b1 = new THREE.Box3().setFromObject(wrap), c = b1.getCenter(new THREE.Vector3());
+  wrap.position.set(-c.x, -b1.min.y, -c.z);
+  wrap.userData.midY = (b1.max.y - b1.min.y) / 2;
+  V.mesh = wrap; V.scene.add(wrap); applyWire(); viewerReset(); viewerStatus("");
+  const d = $("cvDim"); d.hidden = false; const big = Math.max(size.x, size.y, size.z) >= 3000;   /* civil parts read better in metres */
+  const fmt = (v) => big ? (v / 1000).toFixed(2) : v.toFixed(1);
+  d.textContent = `${fmt(size.x)} x ${fmt(size.z)} x ${fmt(size.y)} ${big ? "m" : "mm"}`;
+}
 async function viewerShow(part) {
   $("cvEmpty").hidden = !!part;
   if (!part) { if (V.mesh) { V.scene.remove(V.mesh); V.mesh = null; } $("cvDim").hidden = true; return; }
@@ -405,16 +399,7 @@ async function viewerShow(part) {
       obj = buildPartObject(geo, part.material);
     }
     if (token !== V.token) return;
-    if (V.mesh) { V.scene.remove(V.mesh); disposeObject(V.mesh); }
-    const wrap = new THREE.Group(); wrap.add(obj);
-    const b0 = new THREE.Box3().setFromObject(wrap), size = b0.getSize(new THREE.Vector3());
-    const k = 70 / (Math.max(size.x, size.y, size.z) || 1);
-    wrap.scale.setScalar(k);
-    const b1 = new THREE.Box3().setFromObject(wrap), c = b1.getCenter(new THREE.Vector3());
-    wrap.position.set(-c.x, -b1.min.y, -c.z);
-    wrap.userData.midY = (b1.max.y - b1.min.y) / 2;
-    V.mesh = wrap; V.scene.add(wrap); applyWire(); viewerReset(); viewerStatus("");
-    const d = $("cvDim"); d.hidden = false; d.textContent = `${size.x.toFixed(1)} x ${size.z.toFixed(1)} x ${size.y.toFixed(1)} mm`;
+    viewerPlace(obj);
   } catch (e) { if (token === V.token) viewerStatus(e.message || "Could not load the part.", false); }
 }
 
@@ -445,7 +430,7 @@ const STARTERS = [
   ["Drive shaft", "Shaft 12mm diameter, 120mm long, 1mm chamfer"]
 ];
 function thumbSvg(kind) {
-  const s = '<svg viewBox="0 0 84 68" fill="none" stroke="#0B2545" stroke-width="1.4" stroke-linejoin="round">';
+  const s = '<svg viewBox="0 0 84 68" fill="none" stroke="#1C1C1E" stroke-width="1.4" stroke-linejoin="round">';
   const shapes = {
     gear: '<circle cx="42" cy="34" r="20" fill="#fff"/><circle cx="42" cy="34" r="6"/><path d="M42 10v6M42 52v6M18 34h6M60 34h6M25 17l4 4M55 47l4 4M59 17l-4 4M29 47l-4 4"/>',
     shaft: '<rect x="8" y="27" width="68" height="14" rx="2" fill="#fff"/><path d="M14 27v14M70 27v14"/>',
@@ -487,6 +472,7 @@ function renderThread(animateLast) {
   const latest = lastPart(c);
   inner.innerHTML = c.messages.map((m) => {
     if (m.role === "user") return `<div class="msg user"><div class="bubble">${esc(m.text)}</div></div>`;
+    if (m.fileCard) return `<div class="msg">${ASSIST_AVA}<div class="reply" data-mid="${m.id}">${fileCardHtml(m)}</div></div>`;
     const part = m.partId ? partOf(c, m.partId) : null;
     let extra = "";
     if (part) extra = partCardHtml(c, part, latest && latest.id === part.id && m === c.messages[c.messages.length - 1]);
@@ -538,23 +524,19 @@ function renderCanvas() {
   if (!part) { panel.innerHTML = '<div class="chat-empty">Build a part to see its specs, files and on-chain record here.</div>'; return; }
   if (S.tab === "specs") {
     let rows = `<div class="row"><span>part_type</span><span>${esc(part.partType)}</span></div>`;
-    Object.entries(part.params).forEach(([k, v]) => {
-      if (k === "parts" && Array.isArray(v)) { rows += `<div class="row"><span>parts</span><span>${v.length}</span></div>`; return; }
-      rows += `<div class="row"><span>${esc(k)}</span><span>${esc(v)}</span></div>`;
-    });
+    Object.entries(part.params).forEach(([k, v]) => { rows += `<div class="row"><span>${esc(k)}</span><span>${esc(v)}</span></div>`; });
     if (part.material) rows += `<div class="row"><span>material</span><span>${esc(part.material)}</span></div>`;
     let notes = "";
-    if (part.notes && part.notes.length) notes = `<div class="note"><b>Adjusted for manufacturability</b><ul>${part.notes.map((n) => `<li>${esc(n)}</li>`).join("")}</ul></div>`;
-    panel.innerHTML = `<div class="kv">${rows}</div>${notes}${assemblyHtml(part)}`;
+    if (part.notes && part.notes.length) notes = `<div class="note"><b>Notes on this part</b><ul>${part.notes.map((n) => `<li>${esc(n)}</li>`).join("")}</ul></div>`;
+    panel.innerHTML = `<div class="kv">${rows}</div>${notes}`;
   } else if (S.tab === "files") {
-    const F = [["STEP", "step", "3D solid for CAD and CAM"], ["IGES", "iges", "3D solid, older systems"], ["DXF", "dxf", "2D cut layers for laser and CNC"], ["PDF", "pdf", "1:1 drawing"], ["GLB", "glb", "3D model for web viewers, AR and game engines"], ["3MF", "3mf", "3D model for slicers and print services"], ["URDF", "urdf", "Robot description (zip) for ROS and simulators"], ["STL", "stl", "Mesh for 3D printing"]];
+    const F = [["STEP", "step", "3D solid for CAD and CAM"], ["IGES", "iges", "3D solid, older systems"], ["DXF", "dxf", "2D cut layers for laser and CNC"], ["PDF", "pdf", "1:1 drawing"], ["STL", "stl", "Mesh for 3D printing"]];
     const lock = !part.paid;
-    const rowsF = part.partType === "assembly" ? F.filter((r) => r[1] !== "urdf") : F;   // a URDF is one rigid link
-    const banner = lock ? `<div class="note"><b>Free preview</b><p>You can look at this version and download the STL mesh for free. Press Generate to unlock the STEP, IGES, DXF, PDF, GLB and 3MF files. That costs ${part.generateCredits || 10} credits, once for this version.</p><button class="btn btn-primary btn-sm" data-generate="${part.id}">Generate files · ${part.generateCredits || 10} credits</button></div>` : "";
-    panel.innerHTML = banner + '<div class="files">' + rowsF.map(([n, f, d]) => {
+    const banner = lock ? `<div class="note"><b>Free preview</b><p>You can look at this version and download the STL mesh for free. Press Generate to unlock the STEP, IGES, DXF and PDF files. That costs ${part.generateCredits || 10} credits, once for this version.</p><button class="btn btn-primary btn-sm" data-generate="${part.id}">Generate files · ${part.generateCredits || 10} credits</button></div>` : "";
+    panel.innerHTML = banner + '<div class="files">' + F.map(([n, f, d]) => {
       const locked = lock && f !== "stl";
       return `<div class="file${locked ? " locked" : ""}"><span class="ext">${n}</span><div class="what"><b>${n} file</b><span>${locked ? "Unlocks when you press Generate" : d}</span></div><button class="btn btn-ghost btn-sm" ${locked ? "disabled" : `data-dl="${f}"`}>${locked ? "Locked" : "Download"}</button></div>`;
-    }).join("") + "</div>" + (lock ? "" : checkCardHtml(part));
+    }).join("") + "</div>";
   } else {
     if (part.anchor) {
       const tx = part.anchor.anchor_tx || "";
@@ -567,71 +549,6 @@ function renderCanvas() {
     }
   }
 }
-/* ============================================================ manufacturability check */
-const CHECK_PROCESSES = [["cnc", "CNC", "CNC machining"], ["sheet_metal", "Sheet metal", "sheet metal"], ["injection_molding", "Molding", "injection molding"], ["fdm", "FDM print", "FDM 3D printing"], ["resin", "Resin print", "resin 3D printing"]];
-const CHECK_TAG = { pass: ["OK", "ok"], warn: ["Review", "warn"], fail: ["Problem", "bad"], not_checked: ["Not checked", "nc"], info: ["Note", "info"] };
-function reportHtml(r) {
-  const rows = (r.checks || []).map((c) => {
-    const [label, cls] = CHECK_TAG[c.status] || CHECK_TAG.info;
-    const meta = c.measured ? `<small>${esc(c.measured)}${c.limit ? " · limit " + esc(c.limit) : ""}</small>` : "";
-    return `<div class="chk"><span class="chk-tag ${cls}">${label}</span><div><b>${esc(c.title)}</b><p>${esc(c.detail)}</p>${meta}</div></div>`;
-  }).join("");
-  const notes = (r.assumptions || []).concat(r.disclaimer ? [r.disclaimer] : []).map((a) => `<p class="rnote">${esc(a)}</p>`).join("");
-  return `<div class="report"><p class="rhead">${esc(r.headline || "")}</p>${rows}${notes}</div>`;
-}
-function checkCardHtml(part) {
-  if (part.partType === "assembly") return `<p class="rnote">The manufacturability check runs on single parts. Assemblies are not checked yet.</p>`;
-  const cur = S.checkProc || "cnc", saved = part.checks || {};
-  const price = (S.ai && S.ai.check_credits) || 5;
-  const label = (CHECK_PROCESSES.find((p) => p[0] === cur) || CHECK_PROCESSES[0])[2];
-  const chips = CHECK_PROCESSES.map(([id, short]) => `<button class="chip${id === cur ? " on" : ""}" data-proc="${id}">${short}${saved[id] ? " · done" : ""}</button>`).join("");
-  const body = saved[cur] ? reportHtml(saved[cur])
-    : `<p>Checks this version against general rules for ${label}, such as wall thickness, corners, holes, draft or overhangs. It runs no AI and reads the part's mesh and dimensions. Guidance only, not a certified review.</p><button class="btn btn-primary btn-sm" data-check="${cur}">Run check · ${price} credits</button>`;
-  return `<div class="check-card"><div class="kick">Manufacturability check</div><div class="followups">${chips}</div>${body}</div>`;
-}
-/* The Specs-tab section for an assembly: its parts with positions and mass, then the findings.
-   Positions come from the stored parts list, mass and size from the report the build produced. */
-function assemblyHtml(part) {
-  if (part.partType !== "assembly") return "";
-  const r = part.assembly, list = (part.params && part.params.parts) || [];
-  const by = {}; if (r) r.parts.forEach((p) => { by[p.name] = p; });
-  const rows = list.map((p) => {
-    const m = by[p.name] || {};
-    return `<tr><td>${esc(p.name)}</td><td>${esc(p.part_type)}</td><td>${esc((p.position || []).map((n) => +(+n).toFixed(1)).join(", "))}</td>` +
-      `<td>${m.size_mm ? esc(m.size_mm.map((n) => +(+n).toFixed(1)).join(" x ")) : ""}</td><td>${m.mass_g != null ? esc(m.mass_g + " g") : ""}</td></tr>`;
-  }).join("");
-  const findings = r ? r.findings.map((f) => {
-    const [label, cls] = CHECK_TAG[f.status] || CHECK_TAG.info;
-    return `<div class="chk"><span class="chk-tag ${cls}">${label}</span><div><b>${esc(f.title)}</b><p>${esc(f.detail)}</p></div></div>`;
-  }).join("") : "";
-  const notes = r ? (r.assumptions || []).map((a) => `<p class="rnote">${esc(a)}</p>`).join("") : "";
-  return `<div class="check-card asm"><div class="kick">Assembly</div>${r ? `<p class="rhead">${esc(r.summary)}</p>` : ""}` +
-    `<div class="tbl"><table><thead><tr><th>Part</th><th>Type</th><th>Position mm</th><th>Size mm</th><th>Mass</th></tr></thead><tbody>${rows}</tbody></table></div>${findings}${notes}</div>`;
-}
-function demoReport(process) {
-  return { process, process_label: process, headline: "0 problems, 1 to review, 2 passed, 1 not checked.", disclaimer: "Demo data, not a real check.",
-    checks: [{ id: "closed", title: "Mesh is closed", status: "pass", detail: "Every edge is shared by two triangles." },
-             { id: "walls", title: "Thin walls", status: "warn", detail: "Some spots are thinner than the general minimum.", measured: "thinnest 0.7 mm", limit: "0.8 mm" },
-             { id: "holes", title: "Hole depth to diameter", status: "pass", detail: "A standard drill reaches this depth." },
-             { id: "access", title: "Tool access, setups and tolerances", status: "not_checked", detail: "These need a machining plan." }] };
-}
-async function runCheck(btn, part, proc) {
-  const c = chat();
-  if (!c || S.checking) return;
-  S.checking = true; const label = btn.textContent; btn.disabled = true; btn.textContent = "Checking";
-  try {
-    const r = await Backend.check(c, part, proc);
-    if (r.authExpired) { toast("Your session expired. Sign in again."); return; }
-    if (r.needCredits) { toast(r.detail || "You are out of credits."); openCredits(); return; }
-    if (r.error) { toast(r.error); return; }
-    part.checks = part.checks || {}; part.checks[proc] = r.report; save();
-    if (r.balance != null) setBalance(r.balance); else refreshBalance();
-    toast(r.charged ? `Check done. ${r.charged} credits used.` : "Check opened.");
-    renderCanvas();
-  } catch (err) { toast(err.message || "Could not run the check."); }
-  finally { S.checking = false; if (btn.isConnected) { btn.disabled = false; btn.textContent = label; } }
-}
-
 /* Press Generate: pay once for this version and unlock its full files. */
 async function generateFiles(btn, partId) {
   const c = chat(), part = c && partOf(c, partId);
@@ -662,7 +579,7 @@ function openCanvas(partId, tab) {
 function closeCanvas() { $("app").classList.remove("canvas-open"); $("scrim").classList.remove("on"); }
 
 /* ============================================================ sending */
-async function send(text, templateId) {
+async function send(text) {
   text = (text || "").trim();
   if (!text || S.busy) return;
   let c = chat();
@@ -670,8 +587,7 @@ async function send(text, templateId) {
   c.messages.push({ id: uid(), role: "user", text });
   if (c.title === "New design") c.title = text.length > 44 ? text.slice(0, 42).trim() + "..." : text;
   c.updatedAt = Date.now();
-  if (!templateId) { $("input").value = ""; autosize(); }
-  $("send").disabled = true;
+  $("input").value = ""; autosize(); $("send").disabled = true;
   S.busy = true; renderThread(); renderSide(); $("chatTitle").textContent = c.title; scrollEnd(false); showWorking();
   let out;
   try {
@@ -681,7 +597,7 @@ async function send(text, templateId) {
       else if (!created.ok) { out = { reply: created.detail || "I could not start a new chat. Please try again.", error: true }; }
       else { c.id = created.data.id; c.remote = true; S.activeId = c.id; }
     }
-    if (!out) out = templateId ? await Backend.applyTemplate({ chat: c, id: templateId, text }) : await Backend.send({ chat: c, text });
+    if (!out) out = await Backend.send({ chat: c, text });
   } catch (e) { out = { reply: "Something went wrong on my side. Please try again.", error: true }; }
   hideWorking(); S.busy = false;
   if (out.authExpired) { Auth.clearSession(); c.messages.pop(); toast("Your session expired. Sign in again."); save(); route(); return; }
@@ -697,6 +613,143 @@ async function send(text, templateId) {
   $("send").disabled = !$("input").value.trim();
 }
 
+
+/* ============================================================ attached files */
+/* Mesh files (STL, OBJ, GLB, 3MF) open right here in the browser and are never uploaded.
+   STEP, IGES, BREP, PDF and images go to POST /files/analyze, which reads them for free and
+   hands back sizes and a plain description. Nothing is built until the person sends a message,
+   so a misread number is caught by a human. File cards live in this browser session only. */
+const MAX_UPLOAD_MB = 15;
+const MESH_EXT = new Set(["stl", "obj", "glb", "gltf", "3mf"]);
+const SERVER_EXT = new Set(["step", "stp", "iges", "igs", "brep", "pdf", "png", "jpg", "jpeg", "webp"]);
+const extOf = (n) => (String(n).split(".").pop() || "").toLowerCase();
+const fmtBytes = (n) => n < 1048576 ? Math.max(1, Math.round(n / 1024)) + " KB" : (n / 1048576).toFixed(1) + " MB";
+const num2 = (v) => String(Math.round(v * 100) / 100);
+const fileStore = {};   /* message id -> { buffer?: ArrayBuffer, file?: File, description?: string } */
+const fileMat = () => materialFor("");   // machined metal, not a flat colour
+
+function stlObject(buf) {
+  const geo = new STLLoader().parse(buf); geo.computeVertexNormals(); geo.center(); geo.rotateX(-Math.PI / 2);
+  return new THREE.Mesh(geo, fileMat());
+}
+async function meshObject(file) {
+  const ext = extOf(file.name), buf = await file.arrayBuffer();
+  if (ext === "stl") return { obj: stlObject(buf), buf };
+  let obj;
+  if (ext === "obj") { const { OBJLoader } = await import("three/addons/loaders/OBJLoader.js"); obj = new OBJLoader().parse(new TextDecoder().decode(buf)); obj.traverse((o) => { if (o.isMesh) o.material = fileMat(); }); }
+  else if (ext === "glb" || ext === "gltf") { const { GLTFLoader } = await import("three/addons/loaders/GLTFLoader.js"); const g = await new GLTFLoader().parseAsync(ext === "gltf" ? new TextDecoder().decode(buf) : buf, ""); obj = g.scene; }
+  else { const { ThreeMFLoader } = await import("three/addons/loaders/3MFLoader.js"); obj = new ThreeMFLoader().parse(buf); }
+  return { obj, buf };
+}
+function showInViewer(obj, title) {
+  $("app").classList.add("canvas-open"); S.activePartId = null; renderCanvas();
+  $("cvTitle").textContent = title; $("cvEmpty").hidden = true;
+  viewerInit(); viewerFit(); if (!V.running) { V.running = true; viewerLoop(); }
+  V.token++; viewerPlace(obj);
+  if (innerWidth <= 1180) $("scrim").classList.add("on");
+}
+function b64ToBuf(b64) { const bin = atob(b64), u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return u.buffer; }
+
+function fileCardFromServer(file, r) {
+  const a = r.analysis || {}, card = { name: r.filename || file.name, kind: r.kind, size: fmtBytes(r.size_bytes || file.size), rows: [], dims: [], features: [], missing: [], notes: [], warnings: r.warnings || [], description: r.description || "", text: "", numbers: [], mesh: !!r.stl_base64 };
+  if (a.bbox_mm) {
+    card.rows.push(["Overall size", `${num2(a.bbox_mm.x)} x ${num2(a.bbox_mm.y)} x ${num2(a.bbox_mm.z)} mm`]);
+    if (a.volume_mm3 != null) card.rows.push(["Volume", `${Math.round(a.volume_mm3).toLocaleString("en-US")} mm3`]);
+    card.rows.push(["Solids / faces", `${a.solids} / ${a.faces}`]);
+    (a.round_holes || []).forEach((h) => card.rows.push(["Round hole", `${h.count} x ${num2(h.diameter_mm)} mm diameter`]));
+    (a.round_bosses || []).forEach((h) => card.rows.push(["Round boss or shaft", `${h.count} x ${num2(h.diameter_mm)} mm diameter`]));
+  }
+  const v = a.vision;
+  if (v) {
+    card.summary = v.summary; card.guess = v.part_type_guess;
+    card.dims = v.dimensions || []; card.features = v.features || []; card.missing = v.missing || []; card.notes = v.notes || [];
+  }
+  if (a.text_excerpt) card.text = a.text_excerpt;
+  if (a.numbers_found) card.numbers = a.numbers_found;
+  return card;
+}
+function fileCardHtml(m) {
+  const k = m.fileCard;
+  if (k.error) return `<div class="filecard"><div class="fc-head"><b>${esc(k.name)}</b></div><div class="fc-warn">${esc(k.error)}</div></div>`;
+  let h = `<div class="filecard"><div class="fc-head"><b>${esc(k.name)}</b><span class="fc-kind">${esc(String(k.kind).toUpperCase())}</span></div><div class="fc-sub">${esc(k.size)}${k.local ? " · opened in your browser, not uploaded" : ""}</div>`;
+  if (k.summary) h += `<div>${esc(k.summary)}</div>`;
+  if (k.rows.length) h += "<dl>" + k.rows.map(([a, b]) => `<dt>${esc(a)}</dt><dd>${esc(b)}</dd>`).join("") + "</dl>";
+  if (k.dims.length) h += '<div class="fc-h">Dimensions read from the file</div><ul>' + k.dims.map((d) => `<li>${esc(d.label)}: ${d.value_mm == null ? "not readable" : esc(num2(d.value_mm)) + " mm"}${d.raw ? ` <span class="fc-sub">(${esc(d.raw)})</span>` : ""}<span class="conf ${esc(d.confidence)}">${esc(d.confidence)}</span></li>`).join("") + "</ul>";
+  if (k.features.length) h += '<div class="fc-h">Features</div><ul>' + k.features.map((f) => `<li>${esc(f)}</li>`).join("") + "</ul>";
+  if (k.missing.length) h += '<div class="fc-h">Not shown in the file</div><ul>' + k.missing.map((f) => `<li>${esc(f)}</li>`).join("") + "</ul>";
+  if (k.numbers && k.numbers.length) h += `<div class="fc-h">Numbers with units found in the text</div><div class="fc-sub">${k.numbers.map(esc).join(", ")}</div>`;
+  if (k.text) h += `<details><summary>Text found in the PDF</summary><pre>${esc(k.text)}</pre></details>`;
+  (k.notes || []).concat(k.warnings || []).forEach((w) => { h += `<div class="fc-warn">${esc(w)}</div>`; });
+  if (k.description) h += `<div class="fc-desc">${esc(k.description)}</div>`;
+  h += '<div class="fc-actions">';
+  if (k.description) h += `<button class="btn btn-primary btn-sm" data-fuse="${m.id}">Use as my description</button>`;
+  if (k.mesh) h += `<button class="btn btn-ghost btn-sm" data-fview="${m.id}">View in 3D</button>`;
+  h += "</div>";
+  if (k.description) h += '<div class="fc-sub" style="margin-top:8px">Check every number against your file, edit the text, then send it to build.</div>';
+  return h + "</div>";
+}
+async function attachFile(file) {
+  if (!file) return;
+  if (DEMO) { toast("Sign in to attach files."); return; }
+  if (S.busy) { toast("Wait for the current message to finish."); return; }
+  const ext = extOf(file.name);
+  let c = chat(); if (!c) { c = newChat(); S.activeId = c.id; }
+  const push = (m) => { c.messages.push({ id: uid(), ...m }); c.updatedAt = Date.now(); };
+  const bad = (msg) => { push({ role: "assistant", text: "", fileCard: { name: file.name, kind: ext || "file", size: fmtBytes(file.size), error: msg } }); renderThread(); scrollEnd(true); };
+  push({ role: "user", text: `Attached ${file.name} (${fmtBytes(file.size)})` });
+  if (c.title === "New design") c.title = "File: " + file.name.slice(0, 36);
+  renderThread(); renderSide(); $("chatTitle").textContent = c.title; scrollEnd(false);
+  if (file.size > MAX_UPLOAD_MB * 1048576) return bad(`That file is over ${MAX_UPLOAD_MB} MB.`);
+  if (!file.size) return bad("The file is empty.");
+  S.busy = true; showWorking();
+  try {
+    if (MESH_EXT.has(ext)) {
+      const { obj, buf } = await meshObject(file);
+      const id = uid(); fileStore[id] = { buffer: buf };
+      c.messages.push({ id, role: "assistant", text: "", fileCard: { name: file.name, kind: ext, size: fmtBytes(file.size), rows: [], dims: [], features: [], missing: [], notes: [], warnings: ["Mesh files show shape only. To build a part from it, describe it in the chat."], description: "", local: true, mesh: ext === "stl" } });
+      hideWorking(); S.busy = false; renderThread(); scrollEnd(true);
+      showInViewer(obj, file.name);
+      return;
+    }
+    if (!SERVER_EXT.has(ext)) { hideWorking(); S.busy = false; return bad("This file type is not supported. Use STEP, IGES, BREP, PDF, PNG, JPG, WEBP, STL, OBJ, GLB or 3MF."); }
+    const fd = new FormData(); fd.append("file", file, file.name);
+    let res;
+    try { res = await fetch(`${BASE}/files/analyze`, { method: "POST", headers: Auth.authHeader(), body: fd }); }
+    catch (e) { hideWorking(); S.busy = false; return bad("I could not reach the server. Check your connection and try again."); }
+    if (res.status === 401) { hideWorking(); S.busy = false; Auth.clearSession(); toast("Your session expired. Sign in again."); route(); return; }
+    let data = null; try { data = await res.json(); } catch (e) { /* empty */ }
+    hideWorking(); S.busy = false;
+    if (!res.ok) {
+      const d = data && data.detail;
+      return bad(res.status === 429 ? (typeof d === "string" ? d : "Too many files. Try again later.") : typeof d === "string" ? d : "That file could not be read.");
+    }
+    const id = uid(); const card = fileCardFromServer(file, data);
+    fileStore[id] = { description: card.description, buffer: data.stl_base64 ? b64ToBuf(data.stl_base64) : null };
+    c.messages.push({ id, role: "assistant", text: "", fileCard: card }); c.updatedAt = Date.now();
+    renderThread(); scrollEnd(true);
+    if (fileStore[id].buffer) showInViewer(stlObject(fileStore[id].buffer), card.name);
+  } catch (e) {
+    hideWorking(); S.busy = false; bad("I could not open that file. It may be damaged or in a variant I cannot read.");
+  }
+  $("send").disabled = !$("input").value.trim();
+}
+$("attach").addEventListener("click", () => $("fileInput").click());
+$("fileInput").addEventListener("change", (e) => { const f = e.target.files && e.target.files[0]; e.target.value = ""; attachFile(f); });
+["dragenter", "dragover"].forEach((ev) => $("composer").addEventListener(ev, (e) => { if (e.dataTransfer && [...e.dataTransfer.types].includes("Files")) { e.preventDefault(); $("composer").classList.add("drag"); } }));
+["dragleave", "drop"].forEach((ev) => $("composer").addEventListener(ev, () => $("composer").classList.remove("drag")));
+$("composer").addEventListener("drop", (e) => { const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]; if (f) { e.preventDefault(); attachFile(f); } });
+try {   // a prompt sent from the landing page preview
+  const pre = sessionStorage.getItem("nito_prefill");
+  if (pre) { $("input").value = pre; sessionStorage.removeItem("nito_prefill"); $("input").dispatchEvent(new Event("input")); }
+} catch (e) { /* storage blocked */ }
+$("input").addEventListener("paste", (e) => { const f = [...((e.clipboardData && e.clipboardData.files) || [])][0]; if (f) { e.preventDefault(); attachFile(f); } });
+$("threadInner").addEventListener("click", (e) => {
+  const use = e.target.closest("[data-fuse]");
+  if (use) { const f = fileStore[use.dataset.fuse]; if (f && f.description) { $("input").value = f.description; autosize(); $("send").disabled = false; $("input").focus(); toast("Edit the description if needed, then send it."); } return; }
+  const view = e.target.closest("[data-fview]");
+  if (view) { const f = fileStore[view.dataset.fview]; if (f && f.buffer) showInViewer(stlObject(f.buffer), "File preview"); }
+});
+
 /* ============================================================ credits */
 function setBalance(b) {
   S.balance = b;
@@ -704,36 +757,6 @@ function setBalance(b) {
   $("creditChip").classList.toggle("low", b != null && b <= 2);
 }
 async function refreshBalance() { setBalance(DEMO ? 24 : await Auth.fetchBalance()); }
-/* ============================================================ templates */
-const DEMO_TEMPLATES = { categories: [{ id: "standard_parts", label: "Standard parts" }, { id: "assemblies", label: "Assemblies" }],
-  templates: [{ id: "bearing-608", title: "608 ball bearing", category: "standard_parts", category_label: "Standard parts", summary: "8 mm bore, 22 mm outside, 7 mm wide.", tags: ["Standard size"], hint: "Try: make the bore 10 mm", part_type: "bearing", parts: 1 },
-    { id: "asm-gear-shaft", title: "Gear on a shaft", category: "assemblies", category_label: "Assemblies", summary: "A 20 tooth gear fitted on an 8 mm shaft.", tags: ["2 parts"], hint: "Try: use 30 teeth", part_type: "assembly", parts: 2 }] };
-async function openTemplates() {
-  const data = await Backend.templates();
-  if (!data) { toast("I could not load the templates. Try again."); return; }
-  const m = document.createElement("div"); m.className = "modal"; m.id = "tplModal";
-  let cat = "all", q = "";
-  const draw = () => {
-    const cards = data.templates.filter((t) => (cat === "all" || t.category === cat) && (!q || (t.title + " " + t.summary + " " + t.tags.join(" ")).toLowerCase().includes(q)));
-    m.querySelector(".tpl-grid").innerHTML = cards.length ? cards.map((t) =>
-      `<div class="tpl"><b>${esc(t.title)}</b><span class="muted">${esc(t.summary)}</span><div class="followups">` +
-      `<span class="tag">${esc(t.category_label)}</span>${t.tags.map((g) => `<span class="tag">${esc(g)}</span>`).join("")}</div>` +
-      `<button class="btn btn-primary btn-sm" data-tpl="${esc(t.id)}" data-title="${esc(t.title)}">Use template</button></div>`).join("") : "<p class=\"muted\">No templates match.</p>";
-    m.querySelectorAll("[data-cat]").forEach((b) => b.classList.toggle("on", b.dataset.cat === cat));
-  };
-  m.innerHTML = `<div class="modal-card tpl-card"><h3>Templates</h3><p>Start from a known part, then change it by chat. A template is a free preview, and no AI is used.</p>` +
-    `<input type="search" id="tplSearch" placeholder="Search, for example bracket" aria-label="Search templates"><div class="followups"><button class="chip" data-cat="all">All</button>` +
-    data.categories.map((c) => `<button class="chip" data-cat="${esc(c.id)}">${esc(c.label)}</button>`).join("") + `</div><div class="tpl-grid"></div>` +
-    `<div class="modal-foot"><button class="btn btn-ghost btn-sm" data-close>Close</button></div></div>`;
-  document.body.appendChild(m); draw();
-  m.addEventListener("input", (e) => { if (e.target.id === "tplSearch") { q = e.target.value.trim().toLowerCase(); draw(); } });
-  m.addEventListener("click", async (e) => {
-    if (e.target === m || e.target.closest("[data-close]")) { m.remove(); return; }
-    const c = e.target.closest("[data-cat]"); if (c) { cat = c.dataset.cat; draw(); return; }
-    const t = e.target.closest("[data-tpl]"); if (t) { m.remove(); await send("Start from the template: " + t.dataset.title, t.dataset.tpl); }
-  });
-}
-
 async function openCredits() {
   let cfg = null;
   try { cfg = DEMO ? { credit_price_bot: 0.01, pack_1000_price_bot: 1, pack_1000_credits: 1000, pack_10000_price_bot: 10, pack_10000_credits: 10000 } : await Auth.getChainConfig(); } catch (e) { toast("Could not load pricing. Try again shortly."); return; }
@@ -806,8 +829,6 @@ $("threadInner").addEventListener("click", async (e) => {
 $("panel").addEventListener("click", async (e) => {
   const c = chat(), part = c && partOf(c, S.activePartId); if (!part) return;
   const gen = e.target.closest("[data-generate]"); if (gen) { await generateFiles(gen, part.id); return; }
-  const proc = e.target.closest("[data-proc]"); if (proc) { S.checkProc = proc.dataset.proc; renderCanvas(); return; }
-  const chk = e.target.closest("[data-check]"); if (chk) { await runCheck(chk, part, chk.dataset.check); return; }
   const dl = e.target.closest("[data-dl]");
   if (dl) {
     dl.disabled = true; const t = dl.textContent; dl.textContent = "Building";
@@ -850,7 +871,7 @@ function fillAccount() {
   $("acctSub").textContent = DEMO ? "Sample data" : (s && s.email ? "Google" : "Wallet");
 }
 /* ============================================================ AI picker */
-const DEMO_AI = { default: "basic:deepseek", check_credits: 5, tiers: [
+const DEMO_AI = { default: "basic:deepseek", tiers: [
   { id: "engine", label: "Engine", messages_per_day: null, messages_left: null, generate_credits: 2, models: [{ id: "engine:rules", label: "No AI (engine only)", available: true }] },
   { id: "basic", label: "Basic", messages_per_day: 40, messages_left: 40, generate_credits: 10, models: [{ id: "basic:deepseek", label: "DeepSeek", available: true }] },
   { id: "plus", label: "Plus", messages_per_day: 15, messages_left: 15, generate_credits: 25, models: [{ id: "plus:gpt", label: "GPT", available: true }, { id: "plus:qwen", label: "Qwen", available: true }] },
@@ -870,7 +891,6 @@ async function loadAi() {
   if (!usable.includes(S.model)) S.model = S.ai.default;
   if (!aiBound) {
     aiBound = true;
-    const tb = $("tplBtn"); if (tb) tb.addEventListener("click", openTemplates);
     $("aiModel").addEventListener("change", (e) => {
       S.model = e.target.value;
       try { localStorage.setItem("nitocad_studio_model", S.model); } catch (err) { /* private mode */ }
