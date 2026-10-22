@@ -284,3 +284,29 @@ html[data-theme="dark"] .filecard .fc-warn{background:#3a2f12;border-color:#5b4a
 .ai-bar select:focus{outline:0;border-color:var(--orange);}
 .choices{margin-top:12px;display:grid;gap:12px;}
 .choice-q p{margin:0 0 6px;font-weight:600;}
+
+/* manufacturability check */
+.check-card{margin-top:18px;padding:14px;border:1px solid var(--line);border-radius:14px;background:var(--surface);}
+.check-card p{margin:10px 0;line-height:1.5;}
+.chip.on{background:var(--ink);color:var(--surface);border-color:var(--ink);}
+.report .rhead{font-weight:600;margin:12px 0 6px;}
+.chk{display:flex;gap:10px;padding:10px 0;border-top:1px solid var(--line);}
+.chk p{margin:2px 0 4px;font-size:.88rem;line-height:1.45;}
+.chk small{color:var(--ink-soft);font-size:.78rem;display:block;}
+.chk-tag{flex:none;align-self:flex-start;min-width:84px;text-align:center;padding:2px 8px;border-radius:999px;font-size:.72rem;font-weight:600;border:1px solid var(--line);}
+.chk-tag.ok{color:#4ADE80;border-color:#4ADE80;}
+.chk-tag.warn{color:#FBBF24;border-color:#FBBF24;}
+.chk-tag.bad{color:#F87171;border-color:#F87171;}
+.chk-tag.nc,.chk-tag.info{color:var(--ink-soft);}
+.rnote{font-size:.78rem;color:var(--ink-soft);margin:8px 0 0;}
+
+/* templates and assemblies */
+.tpl-card{width:min(760px,100%);}
+.tpl-card input[type=search]{width:100%;box-sizing:border-box;margin:0 0 10px;padding:9px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);font:inherit;}
+.tpl-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px;margin-top:14px;}
+.tpl{display:flex;flex-direction:column;gap:8px;padding:12px;border:1px solid var(--line);border-radius:14px;background:var(--surface);}
+.tpl .tag{font-size:.7rem;border:1px solid var(--line);border-radius:999px;padding:1px 8px;color:var(--ink-soft);}
+.asm .tbl{overflow-x:auto;margin:8px 0;}
+.asm table{width:100%;border-collapse:collapse;font-size:.82rem;}
+.asm th,.asm td{text-align:left;padding:5px 8px;border-top:1px solid var(--line);white-space:nowrap;}
+.asm th{color:var(--ink-soft);font-weight:600;border-top:0;}

@@ -79,6 +79,33 @@ const Backend = {
     deliver(BASE + info.url, info.filename || `${part.jobId}.${fmt}`);
   },
 
+  /* The template picker's cards. */
+  async templates() {
+    if (DEMO) return DEMO_TEMPLATES;
+    const r = await api("GET", "/templates");
+    return r.ok ? r.data : null;
+  },
+
+  /* Start a part from a template: a free preview, no AI. Same reply shape as send(). */
+  async applyTemplate({ chat, id, text }) {
+    if (DEMO) return Demo.send(text, lastPart(chat));
+    const r = await api("POST", `/chats/${chat.id}/templates/${id}`);
+    if (r.authExpired) return { authExpired: true };
+    if (!r.ok) return { reply: r.detail || "I could not start that template. Please try again.", error: true };
+    const d = r.data;
+    return { reply: d.assistant_message.content, part: d.part ? fromServerPart(d.part) : null, balance: d.balance, choices: [] };
+  },
+
+  /* Manufacturability check for one process: paid once per version and process, then reopened free. */
+  async check(chat, part, process) {
+    if (DEMO) { await sleep(800); return { ok: true, charged: 5, balance: S.balance == null ? 19 : S.balance - 5, report: demoReport(process) }; }
+    const r = await api("POST", `/chats/${chat.id}/parts/${part.id}/check`, { process });
+    if (r.authExpired) return { authExpired: true };
+    if (r.status === 402) return { needCredits: true, detail: r.detail };
+    if (!r.ok) return { error: r.detail || "I could not run the check. Please try again." };
+    return { ok: true, report: r.data.report, charged: r.data.charged, balance: r.data.balance };
+  },
+
   /* Pay for this version and unlock its full files. Safe to repeat: a version that is
      already paid costs nothing. Returns { ok, balance } or { needCredits } or { authExpired }. */
   async generate(chat, part) {
@@ -135,7 +162,7 @@ function replyFor(part, isEdit) {
       : kept ? `\n\nI adjusted some values and flagged others you typed. The details are under Specs.`
       : `\n\nI adjusted a few values to keep it manufacturable. The details are under Specs.`;
   }
-  s += `\n\nTell me what to change, as often as you like. When it looks right, press Generate for the STEP, IGES, DXF and PDF files.`;
+  s += `\n\nTell me what to change, as often as you like. When it looks right, press Generate for the STEP, IGES, DXF, PDF, GLB and 3MF files.`;
   return s;
 }
 
@@ -159,7 +186,7 @@ function fromServerPart(p) {
   const spec = p.spec || {};
   const tx = p.anchor_tx || null;
   return {
-    id: p.id, version: p.version, jobId: p.job_id, title: p.title, partType: p.part_type, paid: p.paid !== false, generateCredits: p.generate_credits || 10, aiTier: p.ai_tier || "basic",
+    id: p.id, version: p.version, jobId: p.job_id, title: p.title, partType: p.part_type, paid: p.paid !== false, checks: p.checks || {}, assembly: p.assembly || null, generateCredits: p.generate_credits || 10, aiTier: p.ai_tier || "basic",
     params: flatParams({ parameters: spec.parameters || {} }), material: spec.material || "", notes: p.notes || [],
     description: "", spec, anchor: tx ? { anchor_tx: tx, explorer_url: Auth.PINNED_CHAIN.explorer_url + "/tx/" + tx } : null
   };
@@ -528,15 +555,16 @@ function renderCanvas() {
     if (part.material) rows += `<div class="row"><span>material</span><span>${esc(part.material)}</span></div>`;
     let notes = "";
     if (part.notes && part.notes.length) notes = `<div class="note"><b>Notes on this part</b><ul>${part.notes.map((n) => `<li>${esc(n)}</li>`).join("")}</ul></div>`;
-    panel.innerHTML = `<div class="kv">${rows}</div>${notes}`;
+    panel.innerHTML = `<div class="kv">${rows}</div>${notes}${assemblyHtml(part)}`;
   } else if (S.tab === "files") {
-    const F = [["STEP", "step", "3D solid for CAD and CAM"], ["IGES", "iges", "3D solid, older systems"], ["DXF", "dxf", "2D cut layers for laser and CNC"], ["PDF", "pdf", "1:1 drawing"], ["STL", "stl", "Mesh for 3D printing"]];
+    const F = [["STEP", "step", "3D solid for CAD and CAM"], ["IGES", "iges", "3D solid, older systems"], ["DXF", "dxf", "2D cut layers for laser and CNC"], ["PDF", "pdf", "1:1 drawing"], ["GLB", "glb", "3D model for web viewers, AR and game engines"], ["3MF", "3mf", "3D model for slicers and print services"], ["URDF", "urdf", "Robot description (zip) for ROS and simulators"], ["STL", "stl", "Mesh for 3D printing"]];
     const lock = !part.paid;
-    const banner = lock ? `<div class="note"><b>Free preview</b><p>You can look at this version and download the STL mesh for free. Press Generate to unlock the STEP, IGES, DXF and PDF files. That costs ${part.generateCredits || 10} credits, once for this version.</p><button class="btn btn-primary btn-sm" data-generate="${part.id}">Generate files · ${part.generateCredits || 10} credits</button></div>` : "";
-    panel.innerHTML = banner + '<div class="files">' + F.map(([n, f, d]) => {
+    const rowsF = part.partType === "assembly" ? F.filter((r) => r[1] !== "urdf") : F;   // a URDF is one rigid link
+    const banner = lock ? `<div class="note"><b>Free preview</b><p>You can look at this version and download the STL mesh for free. Press Generate to unlock the STEP, IGES, DXF, PDF, GLB and 3MF files. That costs ${part.generateCredits || 10} credits, once for this version.</p><button class="btn btn-primary btn-sm" data-generate="${part.id}">Generate files · ${part.generateCredits || 10} credits</button></div>` : "";
+    panel.innerHTML = banner + '<div class="files">' + rowsF.map(([n, f, d]) => {
       const locked = lock && f !== "stl";
       return `<div class="file${locked ? " locked" : ""}"><span class="ext">${n}</span><div class="what"><b>${n} file</b><span>${locked ? "Unlocks when you press Generate" : d}</span></div><button class="btn btn-ghost btn-sm" ${locked ? "disabled" : `data-dl="${f}"`}>${locked ? "Locked" : "Download"}</button></div>`;
-    }).join("") + "</div>";
+    }).join("") + "</div>" + (lock ? "" : checkCardHtml(part));
   } else {
     if (part.anchor) {
       const tx = part.anchor.anchor_tx || "";
@@ -549,6 +577,71 @@ function renderCanvas() {
     }
   }
 }
+/* ============================================================ manufacturability check */
+const CHECK_PROCESSES = [["cnc", "CNC", "CNC machining"], ["sheet_metal", "Sheet metal", "sheet metal"], ["injection_molding", "Molding", "injection molding"], ["fdm", "FDM print", "FDM 3D printing"], ["resin", "Resin print", "resin 3D printing"]];
+const CHECK_TAG = { pass: ["OK", "ok"], warn: ["Review", "warn"], fail: ["Problem", "bad"], not_checked: ["Not checked", "nc"], info: ["Note", "info"] };
+function reportHtml(r) {
+  const rows = (r.checks || []).map((c) => {
+    const [label, cls] = CHECK_TAG[c.status] || CHECK_TAG.info;
+    const meta = c.measured ? `<small>${esc(c.measured)}${c.limit ? " · limit " + esc(c.limit) : ""}</small>` : "";
+    return `<div class="chk"><span class="chk-tag ${cls}">${label}</span><div><b>${esc(c.title)}</b><p>${esc(c.detail)}</p>${meta}</div></div>`;
+  }).join("");
+  const notes = (r.assumptions || []).concat(r.disclaimer ? [r.disclaimer] : []).map((a) => `<p class="rnote">${esc(a)}</p>`).join("");
+  return `<div class="report"><p class="rhead">${esc(r.headline || "")}</p>${rows}${notes}</div>`;
+}
+function checkCardHtml(part) {
+  if (part.partType === "assembly") return `<p class="rnote">The manufacturability check runs on single parts. Assemblies are not checked yet.</p>`;
+  const cur = S.checkProc || "cnc", saved = part.checks || {};
+  const price = (S.ai && S.ai.check_credits) || 5;
+  const label = (CHECK_PROCESSES.find((p) => p[0] === cur) || CHECK_PROCESSES[0])[2];
+  const chips = CHECK_PROCESSES.map(([id, short]) => `<button class="chip${id === cur ? " on" : ""}" data-proc="${id}">${short}${saved[id] ? " · done" : ""}</button>`).join("");
+  const body = saved[cur] ? reportHtml(saved[cur])
+    : `<p>Checks this version against general rules for ${label}, such as wall thickness, corners, holes, draft or overhangs. It runs no AI and reads the part's mesh and dimensions. Guidance only, not a certified review.</p><button class="btn btn-primary btn-sm" data-check="${cur}">Run check · ${price} credits</button>`;
+  return `<div class="check-card"><div class="kick">Manufacturability check</div><div class="followups">${chips}</div>${body}</div>`;
+}
+/* The Specs-tab section for an assembly: its parts with positions and mass, then the findings.
+   Positions come from the stored parts list, mass and size from the report the build produced. */
+function assemblyHtml(part) {
+  if (part.partType !== "assembly") return "";
+  const r = part.assembly, list = (part.spec && part.spec.parameters && part.spec.parameters.parts) || [];
+  const by = {}; if (r) r.parts.forEach((p) => { by[p.name] = p; });
+  const rows = list.map((p) => {
+    const m = by[p.name] || {};
+    return `<tr><td>${esc(p.name)}</td><td>${esc(p.part_type)}</td><td>${esc((p.position || []).map((n) => +(+n).toFixed(1)).join(", "))}</td>` +
+      `<td>${m.size_mm ? esc(m.size_mm.map((n) => +(+n).toFixed(1)).join(" x ")) : ""}</td><td>${m.mass_g != null ? esc(m.mass_g + " g") : ""}</td></tr>`;
+  }).join("");
+  const findings = r ? r.findings.map((f) => {
+    const [label, cls] = CHECK_TAG[f.status] || CHECK_TAG.info;
+    return `<div class="chk"><span class="chk-tag ${cls}">${label}</span><div><b>${esc(f.title)}</b><p>${esc(f.detail)}</p></div></div>`;
+  }).join("") : "";
+  const notes = r ? (r.assumptions || []).map((a) => `<p class="rnote">${esc(a)}</p>`).join("") : "";
+  return `<div class="check-card asm"><div class="kick">Assembly</div>${r ? `<p class="rhead">${esc(r.summary)}</p>` : ""}` +
+    `<div class="tbl"><table><thead><tr><th>Part</th><th>Type</th><th>Position mm</th><th>Size mm</th><th>Mass</th></tr></thead><tbody>${rows}</tbody></table></div>${findings}${notes}</div>`;
+}
+function demoReport(process) {
+  return { process, process_label: process, headline: "0 problems, 1 to review, 2 passed, 1 not checked.", disclaimer: "Demo data, not a real check.",
+    checks: [{ id: "closed", title: "Mesh is closed", status: "pass", detail: "Every edge is shared by two triangles." },
+             { id: "walls", title: "Thin walls", status: "warn", detail: "Some spots are thinner than the general minimum.", measured: "thinnest 0.7 mm", limit: "0.8 mm" },
+             { id: "holes", title: "Hole depth to diameter", status: "pass", detail: "A standard drill reaches this depth." },
+             { id: "access", title: "Tool access, setups and tolerances", status: "not_checked", detail: "These need a machining plan." }] };
+}
+async function runCheck(btn, part, proc) {
+  const c = chat();
+  if (!c || S.checking) return;
+  S.checking = true; const label = btn.textContent; btn.disabled = true; btn.textContent = "Checking";
+  try {
+    const r = await Backend.check(c, part, proc);
+    if (r.authExpired) { toast("Your session expired. Sign in again."); return; }
+    if (r.needCredits) { toast(r.detail || "You are out of credits."); openCredits(); return; }
+    if (r.error) { toast(r.error); return; }
+    part.checks = part.checks || {}; part.checks[proc] = r.report; save();
+    if (r.balance != null) setBalance(r.balance); else refreshBalance();
+    toast(r.charged ? `Check done. ${r.charged} credits used.` : "Check opened.");
+    renderCanvas();
+  } catch (err) { toast(err.message || "Could not run the check."); }
+  finally { S.checking = false; if (btn.isConnected) { btn.disabled = false; btn.textContent = label; } }
+}
+
 /* Press Generate: pay once for this version and unlock its full files. */
 async function generateFiles(btn, partId) {
   const c = chat(), part = c && partOf(c, partId);
@@ -579,7 +672,7 @@ function openCanvas(partId, tab) {
 function closeCanvas() { $("app").classList.remove("canvas-open"); $("scrim").classList.remove("on"); }
 
 /* ============================================================ sending */
-async function send(text) {
+async function send(text, templateId) {
   text = (text || "").trim();
   if (!text || S.busy) return;
   let c = chat();
@@ -587,7 +680,8 @@ async function send(text) {
   c.messages.push({ id: uid(), role: "user", text });
   if (c.title === "New design") c.title = text.length > 44 ? text.slice(0, 42).trim() + "..." : text;
   c.updatedAt = Date.now();
-  $("input").value = ""; autosize(); $("send").disabled = true;
+  if (!templateId) { $("input").value = ""; autosize(); }
+  $("send").disabled = true;
   S.busy = true; renderThread(); renderSide(); $("chatTitle").textContent = c.title; scrollEnd(false); showWorking();
   let out;
   try {
@@ -597,7 +691,7 @@ async function send(text) {
       else if (!created.ok) { out = { reply: created.detail || "I could not start a new chat. Please try again.", error: true }; }
       else { c.id = created.data.id; c.remote = true; S.activeId = c.id; }
     }
-    if (!out) out = await Backend.send({ chat: c, text });
+    if (!out) out = templateId ? await Backend.applyTemplate({ chat: c, id: templateId, text }) : await Backend.send({ chat: c, text });
   } catch (e) { out = { reply: "Something went wrong on my side. Please try again.", error: true }; }
   hideWorking(); S.busy = false;
   if (out.authExpired) { Auth.clearSession(); c.messages.pop(); toast("Your session expired. Sign in again."); save(); route(); return; }
@@ -757,6 +851,36 @@ function setBalance(b) {
   $("creditChip").classList.toggle("low", b != null && b <= 2);
 }
 async function refreshBalance() { setBalance(DEMO ? 24 : await Auth.fetchBalance()); }
+/* ============================================================ templates */
+const DEMO_TEMPLATES = { categories: [{ id: "standard_parts", label: "Standard parts" }, { id: "assemblies", label: "Assemblies" }],
+  templates: [{ id: "bearing-608", title: "608 ball bearing", category: "standard_parts", category_label: "Standard parts", summary: "8 mm bore, 22 mm outside, 7 mm wide.", tags: ["Standard size"], hint: "Try: make the bore 10 mm", part_type: "bearing", parts: 1 },
+    { id: "asm-gear-shaft", title: "Gear on a shaft", category: "assemblies", category_label: "Assemblies", summary: "A 20 tooth gear fitted on an 8 mm shaft.", tags: ["2 parts"], hint: "Try: use 30 teeth", part_type: "assembly", parts: 2 }] };
+async function openTemplates() {
+  const data = await Backend.templates();
+  if (!data) { toast("I could not load the templates. Try again."); return; }
+  const m = document.createElement("div"); m.className = "modal"; m.id = "tplModal";
+  let cat = "all", q = "";
+  const draw = () => {
+    const cards = data.templates.filter((t) => (cat === "all" || t.category === cat) && (!q || (t.title + " " + t.summary + " " + t.tags.join(" ")).toLowerCase().includes(q)));
+    m.querySelector(".tpl-grid").innerHTML = cards.length ? cards.map((t) =>
+      `<div class="tpl"><b>${esc(t.title)}</b><span class="muted">${esc(t.summary)}</span><div class="followups">` +
+      `<span class="tag">${esc(t.category_label)}</span>${t.tags.map((g) => `<span class="tag">${esc(g)}</span>`).join("")}</div>` +
+      `<button class="btn btn-primary btn-sm" data-tpl="${esc(t.id)}" data-title="${esc(t.title)}">Use template</button></div>`).join("") : "<p class=\"muted\">No templates match.</p>";
+    m.querySelectorAll("[data-cat]").forEach((b) => b.classList.toggle("on", b.dataset.cat === cat));
+  };
+  m.innerHTML = `<div class="modal-card tpl-card"><h3>Templates</h3><p>Start from a known part, then change it by chat. A template is a free preview, and no AI is used.</p>` +
+    `<input type="search" id="tplSearch" placeholder="Search, for example bracket" aria-label="Search templates"><div class="followups"><button class="chip" data-cat="all">All</button>` +
+    data.categories.map((c) => `<button class="chip" data-cat="${esc(c.id)}">${esc(c.label)}</button>`).join("") + `</div><div class="tpl-grid"></div>` +
+    `<div class="modal-foot"><button class="btn btn-ghost btn-sm" data-close>Close</button></div></div>`;
+  document.body.appendChild(m); draw();
+  m.addEventListener("input", (e) => { if (e.target.id === "tplSearch") { q = e.target.value.trim().toLowerCase(); draw(); } });
+  m.addEventListener("click", async (e) => {
+    if (e.target === m || e.target.closest("[data-close]")) { m.remove(); return; }
+    const c = e.target.closest("[data-cat]"); if (c) { cat = c.dataset.cat; draw(); return; }
+    const t = e.target.closest("[data-tpl]"); if (t) { m.remove(); await send("Start from the template: " + t.dataset.title, t.dataset.tpl); }
+  });
+}
+
 async function openCredits() {
   let cfg = null;
   try { cfg = DEMO ? { credit_price_bot: 0.01, pack_1000_price_bot: 1, pack_1000_credits: 1000, pack_10000_price_bot: 10, pack_10000_credits: 10000 } : await Auth.getChainConfig(); } catch (e) { toast("Could not load pricing. Try again shortly."); return; }
@@ -829,6 +953,8 @@ $("threadInner").addEventListener("click", async (e) => {
 $("panel").addEventListener("click", async (e) => {
   const c = chat(), part = c && partOf(c, S.activePartId); if (!part) return;
   const gen = e.target.closest("[data-generate]"); if (gen) { await generateFiles(gen, part.id); return; }
+  const proc = e.target.closest("[data-proc]"); if (proc) { S.checkProc = proc.dataset.proc; renderCanvas(); return; }
+  const chk = e.target.closest("[data-check]"); if (chk) { await runCheck(chk, part, chk.dataset.check); return; }
   const dl = e.target.closest("[data-dl]");
   if (dl) {
     dl.disabled = true; const t = dl.textContent; dl.textContent = "Building";
@@ -871,7 +997,7 @@ function fillAccount() {
   $("acctSub").textContent = DEMO ? "Sample data" : (s && s.email ? "Google" : "Wallet");
 }
 /* ============================================================ AI picker */
-const DEMO_AI = { default: "basic:deepseek", tiers: [
+const DEMO_AI = { default: "basic:deepseek", check_credits: 5, tiers: [
   { id: "engine", label: "Engine", messages_per_day: null, messages_left: null, generate_credits: 2, models: [{ id: "engine:rules", label: "No AI (engine only)", available: true }] },
   { id: "basic", label: "Basic", messages_per_day: 40, messages_left: 40, generate_credits: 10, models: [{ id: "basic:deepseek", label: "DeepSeek", available: true }] },
   { id: "plus", label: "Plus", messages_per_day: 15, messages_left: 15, generate_credits: 25, models: [{ id: "plus:gpt", label: "GPT", available: true }, { id: "plus:qwen", label: "Qwen", available: true }] },
@@ -891,6 +1017,7 @@ async function loadAi() {
   if (!usable.includes(S.model)) S.model = S.ai.default;
   if (!aiBound) {
     aiBound = true;
+    const tb = $("tplBtn"); if (tb) tb.addEventListener("click", openTemplates);
     $("aiModel").addEventListener("change", (e) => {
       S.model = e.target.value;
       try { localStorage.setItem("nitocad_studio_model", S.model); } catch (err) { /* private mode */ }
