@@ -1,5 +1,5 @@
 /* NitoCAD hero: a blueprint that draws itself stroke by stroke, then lifts into a solid.
-   Two swappable scenes (airplane, house). Uses the same three.js build the page already
+   Four swappable scenes (gear, bracket, airplane, house). Uses the same three.js build the page already
    loads through its import map, so it adds no new network dependency.
    Pauses when off-screen or in a background tab, and respects prefers-reduced-motion. */
 import * as THREE from "three";
@@ -767,7 +767,102 @@ function boot() {
     };
   }
 
+  /* ---------- machined-part scenes (1 unit = 1 mm) ---------- */
+  // Closed ring as a hole path. Kept as a 32-gon so the wall facets stay under the edge threshold.
+  const ring = (cx, cy, r, n) => {
+    const a = [];
+    for (let i = 0; i < n; i++) { const t = (i / n) * Math.PI * 2; a.push(new THREE.Vector2(cx + r * Math.cos(t), cy + r * Math.sin(t))); }
+    return new THREE.Path(a);
+  };
+  const circY = (r, y, n) => {
+    const o = [];
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2, b = ((i + 1) / n) * Math.PI * 2;
+      o.push(r * Math.cos(a), y, r * Math.sin(a), r * Math.cos(b), y, r * Math.sin(b));
+    }
+    return new Float32Array(o);
+  };
+  const STEEL = { r: 0.45, m: 0.35 };
+
+  /* Spur gear: module 2, 20 teeth, 20 degree pressure angle, 10 mm thick, 5 mm bore. True involute flanks. */
+  function buildGear(cut) {
+    TEXBY.clear(); GLOSSY.clear();
+    const mod = 2, Z = 20, T = 10, BORE = 5, A = Math.PI / 9;
+    const rp = (mod * Z) / 2, rb = rp * Math.cos(A), ro = rp + mod, rr = rp - 1.25 * mod;
+    const inv = (a) => Math.tan(a) - a;
+    const hb = Math.PI / (2 * Z) + inv(A);                       // half tooth angle at the base circle
+    const ang = (r) => inv(Math.acos(Math.min(1, rb / r)));      // involute angle at radius r
+    const pol = (r, a) => [r * Math.cos(a), r * Math.sin(a)];
+    const step = (Math.PI * 2) / Z, NF = 7, pts = [];
+    for (let i = 0; i < Z; i++) {
+      const c = i * step;
+      pts.push(pol(rr, c - hb));
+      for (let k = 0; k <= NF; k++) { const r = rb + (ro - rb) * (k / NF); pts.push(pol(r, c - hb + ang(r))); }
+      for (let k = NF; k >= 0; k--) { const r = rb + (ro - rb) * (k / NF); pts.push(pol(r, c + hb - ang(r))); }
+      pts.push(pol(rr, c + hb));
+      const a0 = c + hb, a1 = c + step - hb;
+      for (let k = 1; k <= 3; k++) pts.push(pol(rr, a0 + (a1 - a0) * (k / 4)));
+    }
+    const shape = polyShape(pts);
+    shape.holes.push(ring(0, 0, BORE / 2, 32));
+    const extra = cat(circY(rp, T + 0.04, 72), new Float32Array([0, -3, 0, 0, T + 4, 0]));   // pitch circle and axis
+    const P = [mk("Spur gear", extrude(shape, T), 0xb9bfc8, Object.assign({ rot: [-Math.PI / 2, 0, 0], extra }, STEEL))];
+    return {
+      parts: P,
+      clip: cut ? new THREE.Plane(new THREE.Vector3(0, 0, -1), 0) : null,
+      focus: null,
+      gridStep: 5,
+      dims: (box) => cat(
+        dim([box.min.x, 0, box.max.z + 5], [box.max.x, 0, box.max.z + 5], [0, 0, 1], 1.6),
+        dim([box.max.x + 5, 0, 0], [box.max.x + 5, T, 0], [1, 0, 0], 1.6)),
+      groundOffset: 0.0
+    };
+  }
+
+  /* L-bracket: 50 wide, 60 tall, 40 deep, 3 mm thick, 3 mm inside bend radius, 2 holes per leg. */
+  function buildBracket(cut) {
+    TEXBY.clear(); GLOSSY.clear();
+    const W = 50, D = 40, H = 60, t = 3, ri = 3, ro = ri + t, hr = 2.75, N = 10, MET = 0xc3c8d0, P = [];
+    const base = polyShape(rectPts(-W / 2, ro, W / 2, D));
+    [-14, 14].forEach((x) => base.holes.push(ring(x, 26, hr, 32)));
+    P.push(mk("Base leg", extrude(base, t), MET, Object.assign({ rot: [Math.PI / 2, 0, 0], pos: [0, t, -D / 2] }, STEEL)));
+    const up = polyShape(rectPts(-W / 2, ro, W / 2, H));
+    [-14, 14].forEach((x) => up.holes.push(ring(x, 40, hr, 32)));
+    P.push(mk("Upright leg", extrude(up, t), MET, Object.assign({ pos: [0, 0, -D / 2] }, STEEL)));
+    const bp = [];
+    for (let k = 0; k <= N; k++) { const a = Math.PI + (k / N) * (Math.PI / 2); bp.push([ro + ro * Math.cos(a), ro + ro * Math.sin(a)]); }
+    for (let k = N; k >= 0; k--) { const a = Math.PI + (k / N) * (Math.PI / 2); bp.push([ro + ri * Math.cos(a), ro + ri * Math.sin(a)]); }
+    P.push(mk("Bend", extrude(polyShape(bp), W), MET, Object.assign({ rot: [0, -Math.PI / 2, 0], pos: [W / 2, 0, -D / 2] }, STEEL)));
+    return {
+      parts: P,
+      clip: cut ? new THREE.Plane(new THREE.Vector3(-1, 0, 0), 0) : null,
+      focus: null,
+      gridStep: 5,
+      dims: (box) => cat(
+        dim([box.min.x, 0, box.max.z + 6], [box.max.x, 0, box.max.z + 6], [0, 0, 1], 1.8),
+        dim([box.max.x + 6, 0, box.min.z], [box.max.x + 6, H, box.min.z], [1, 0, 0], 1.8),
+        dim([box.max.x + 6, 0, box.min.z], [box.max.x + 6, 0, box.max.z], [1, 0, 0], 1.8)),
+      groundOffset: 0.0
+    };
+  }
+
   const SCENES = [
+    {
+      id: "gear", build: buildGear, unit: "mm", partCount: 1,
+      prompt: "Spur gear, module 2, 20 teeth, 10 mm thick, 5 mm bore",
+      alt: "A 20-tooth spur gear drawn as a blueprint line by line, then turning into a solid 3D model",
+      envelope: "width × depth × height",
+      cam: { from: { az: 0.0, el: 1.34 }, to: { az: 0.62, el: 0.5 } },
+      camCut: { from: { az: 0.0, el: 1.34 }, to: { az: 0.12, el: 0.62 } }
+    },
+    {
+      id: "bracket", build: buildBracket, unit: "mm", partCount: 1,
+      prompt: "L-bracket, 50 mm wide, 60 mm tall, 40 mm deep, 3 mm thick, 2 holes per leg",
+      alt: "An L-bracket with two holes in each leg drawn as a blueprint line by line, then turning into a solid 3D model",
+      envelope: "width × depth × height",
+      cam: { from: { az: 0.2, el: 1.2 }, to: { az: 0.72, el: 0.42 } },
+      camCut: { from: { az: 0.2, el: 1.2 }, to: { az: 1.15, el: 0.4 } }
+    },
     {
       id: "airplane", build: buildPlane,
       prompt: "Four-engine double-deck airliner, 80 m wingspan, swept wings",
@@ -868,8 +963,9 @@ function boot() {
     scene.add(S.grid);
 
     S.promptText = def.prompt;
-    if (el.parts) el.parts.textContent = built.parts.filter((p) => !p.dress).length + " parts";
-    if (el.size) el.size.textContent = size.x.toFixed(1) + " × " + size.z.toFixed(1) + " × " + size.y.toFixed(1) + " m";
+    const nParts = def.partCount != null ? def.partCount : built.parts.filter((p) => !p.dress).length;
+    if (el.parts) el.parts.textContent = nParts + (nParts === 1 ? " part" : " parts");
+    if (el.size) el.size.textContent = size.x.toFixed(1) + " × " + size.z.toFixed(1) + " × " + size.y.toFixed(1) + " " + (def.unit || "m");
     if (el.sizeLabel) el.sizeLabel.textContent = "Envelope, " + def.envelope;
     host.setAttribute("role", "img");
     host.setAttribute("aria-label", def.alt);

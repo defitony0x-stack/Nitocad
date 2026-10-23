@@ -169,3 +169,5 @@ html[data-theme="dark"] textarea,
 html[data-theme="dark"] select{background:#0B0B14;border-color:#26263A;}
 html[data-theme="dark"] header{background:rgba(4,4,12,.82);}
 html[data-theme="dark"] .rig{background:#12121E;}
+
+html[data-theme="dark"] .hero-status li{background:var(--surface);}

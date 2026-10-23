@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NitoCAD | Describe it, get the 3D solid</title>
-<meta name="description" content="Describe what you want to build in plain English. NitoCAD turns it into a 3D solid and exports STEP, IGES, DXF, PDF and STL files.">
+<title>NitoCAD | Describe the part. Get a CAD model you can manufacture.</title>
+<meta name="description" content="Describe a part in plain English or attach a STEP, DXF or sketch. NitoCAD builds the solid, checks it for CNC, sheet metal, molding and 3D printing, and exports STEP, STL, DXF, PDF, GLB and 3MF. Preview free.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,500&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -157,6 +157,7 @@
     max-width:46ch;margin:24px 0 32px;
   }
   .hero-ctas{display:flex;gap:14px;flex-wrap:wrap;}
+  .hero-proof{margin-top:22px;}
 
   /* properties-palette style spec readout */
   .spec{
@@ -713,7 +714,7 @@
     </button>
     <div id="googleSignInDivMobile" style="display:none;"></div>
     <button id="walletNavBtnMobile" class="btn btn-ghost">Connect Wallet</button>
-    <a href="studio.html" class="btn btn-primary">Open CAD Studio</a>
+    <a href="studio.html" class="btn btn-primary">Build your first part free</a>
   </div>
 </header>
 <script>
@@ -737,33 +738,37 @@
   <section class="hero hero-v2">
     <div class="wrap">
       <div class="hero-head">
-        <h1>Describe what you want to build.<br>Get the 3D solid.</h1>
+        <h1>Describe the part.<br>Get a CAD model you can manufacture.</h1>
         <div class="hero-copy">
-          <p class="lead">Write the details in plain English, from a motor bracket to a house. NitoCAD builds the model and exports files you can use.</p>
+          <p class="lead">Type it in plain English, or attach a STEP, DXF or sketch. NitoCAD builds the solid, checks it for CNC, sheet metal, molding and 3D printing, and exports STEP, STL, DXF, PDF, GLB and 3MF. Preview it free before you pay.</p>
           <div class="hero-ctas">
-            <a href="studio.html" class="btn btn-primary">Open CAD Studio</a>
+            <a href="studio.html" class="btn btn-primary">Build your first part free</a>
             <a href="#demo" class="btn btn-ghost">Try a free preview</a>
           </div>
+          <ul class="hero-status hero-proof mono" aria-label="What is in the build">
+            <li>8 file formats</li>
+            <li>5 manufacturing checks</li>
+            <li>26 starter templates</li>
+          </ul>
         </div>
       </div>
       <div class="rig rig-wide">
         <div class="rig-top">
-          <span class="rig-brand mono">Describe it. Watch it become a solid.</span>
+          <span class="rig-brand mono">Describe it. Check it. Export it.</span>
           <span class="rig-dots"><span></span><span></span><span></span></span>
         </div>
         <div class="bp-tabs" role="group" aria-label="Preview scene">
-          <button type="button" class="bp-tab mono" data-scene="airplane" aria-pressed="true">Airplane</button>
+          <button type="button" class="bp-tab mono" data-scene="gear" aria-pressed="true">Gear</button>
+          <button type="button" class="bp-tab mono" data-scene="bracket" aria-pressed="false">Bracket</button>
+          <button type="button" class="bp-tab mono" data-scene="airplane" aria-pressed="false">Airplane</button>
           <button type="button" class="bp-tab mono" data-scene="house" aria-pressed="false">House</button>
           <button type="button" class="bp-cutbtn mono" id="bpCut" aria-pressed="false">Cutaway</button>
         </div>
         <div class="bp-stage" id="bpStage">
           <div class="bp-canvas"></div>
           <svg class="bp-fallback" viewBox="0 0 200 160" fill="none" stroke="#C9A24B" stroke-width="1.2" stroke-linejoin="round" aria-hidden="true">
-            <path pathLength="1" d="M20 80 C40 73 150 73 180 80 C150 87 40 87 20 80Z"/>
-            <path pathLength="1" d="M92 75 L116 22 L132 22 L128 75"/>
-            <path pathLength="1" d="M92 85 L116 138 L132 138 L128 85"/>
-            <path pathLength="1" d="M34 78 L24 60 L38 60 L50 76"/>
-            <path pathLength="1" d="M34 82 L24 100 L38 100 L50 84"/>
+            <path pathLength="1" d="M145.7 75.0 L155.9 77.2 L155.9 82.8 L145.7 85.0 L145.0 89.3 L154.1 94.6 L152.3 99.9 L141.9 98.9 L140.0 102.8 L146.9 110.6 L143.6 115.1 L134.0 111.0 L131.0 114.0 L135.1 123.6 L130.6 126.9 L122.8 120.0 L118.9 121.9 L119.9 132.3 L114.6 134.1 L109.3 125.0 L105.0 125.7 L102.8 135.9 L97.2 135.9 L95.0 125.7 L90.7 125.0 L85.4 134.1 L80.1 132.3 L81.1 121.9 L77.2 120.0 L69.4 126.9 L64.9 123.6 L69.0 114.0 L66.0 111.0 L56.4 115.1 L53.1 110.6 L60.0 102.8 L58.1 98.9 L47.7 99.9 L45.9 94.6 L55.0 89.3 L54.3 85.0 L44.1 82.8 L44.1 77.2 L54.3 75.0 L55.0 70.7 L45.9 65.4 L47.7 60.1 L58.1 61.1 L60.0 57.2 L53.1 49.4 L56.4 44.9 L66.0 49.0 L69.0 46.0 L64.9 36.4 L69.4 33.1 L77.2 40.0 L81.1 38.1 L80.1 27.7 L85.4 25.9 L90.7 35.0 L95.0 34.3 L97.2 24.1 L102.8 24.1 L105.0 34.3 L109.3 35.0 L114.6 25.9 L119.9 27.7 L118.9 38.1 L122.8 40.0 L130.6 33.1 L135.1 36.4 L131.0 46.0 L134.0 49.0 L143.6 44.9 L146.9 49.4 L140.0 57.2 L141.9 61.1 L152.3 60.1 L154.1 65.4 L145.0 70.7Z"/>
+            <path pathLength="1" d="M106 80 A6 6 0 1 1 94 80 A6 6 0 1 1 106 80Z"/>
           </svg>
           <div class="bp-prompt mono" aria-hidden="true"><span class="bp-gt">&gt;</span> <span id="bpPrompt"></span><i class="bp-caret"></i></div>
         </div>
@@ -797,7 +802,7 @@
             <button type="button" data-ex="shaft 10mm diameter, 50mm long, 0.5mm chamfer">Shaft</button>
           </div>
           <div class="demo-form">
-            <textarea id="description" placeholder="e.g., mounting bracket for a 50mm stepper motor, 4 holes, 5mm fillets, 3mm thick"></textarea>
+            <textarea id="description" placeholder="e.g., Spur gear, module 2, 20 teeth, 10 mm thick, 5 mm bore"></textarea>
           </div>
           <div class="demo-actions">
             <button id="demoPreview" type="button" class="btn btn-primary">Preview free</button>
@@ -846,6 +851,67 @@
   </div>
 
   <!-- WHAT WORKS TODAY: the technical detail, pushed below the demo -->
+  <!-- HOW IT WORKS -->
+  <section class="how" id="how">
+    <div class="wrap">
+      <div class="section-head">
+        <h2>Describe it. Check it. Export it.</h2>
+        <p>From a sentence to a file you can send to the shop.</p>
+      </div>
+      <div class="steps">
+        <div class="step">
+          <span class="n">1</span>
+          <h3>Describe it</h3>
+          <p>Write the part in plain English with your real dimensions, or attach a STEP file, a DXF or a sketch. NitoCAD builds the solid and shows a free preview.</p>
+        </div>
+        <div class="step">
+          <span class="n">2</span>
+          <h3>Check it</h3>
+          <p>Five manufacturability checks run on the part, covering CNC, sheet metal, molding and 3D printing. For assemblies, NitoCAD checks overlaps, floating parts and mass.</p>
+        </div>
+        <div class="step">
+          <span class="n">3</span>
+          <h3>Export it</h3>
+          <p>Download STEP, STL, IGES, DXF, PDF, GLB, 3MF or URDF when you are happy with it.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- WHAT YOU CAN BUILD -->
+  <section class="build" id="build">
+    <div class="wrap">
+      <div class="section-head" style="margin-bottom:0;">
+        <h2>What you can build</h2>
+        <p>Brackets, gears, assemblies, circuit boards, buildings, roads, airplanes and houses. Start from one of 26 templates or describe your own.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- WHY ENGINEERS USE IT -->
+  <section class="why" id="why">
+    <div class="wrap">
+      <div class="section-head">
+        <h2>Why engineers use it</h2>
+        <p>Say what the part must do. NitoCAD keeps it true as you change it.</p>
+      </div>
+      <div class="svc-grid">
+        <div class="svc">
+          <h3>Your numbers stay yours</h3>
+          <p>Every value you type is kept exactly as written. If NitoCAD sees a problem with a dimension, it flags it and leaves the value alone.</p>
+        </div>
+        <div class="svc">
+          <h3>It runs in your browser</h3>
+          <p>Nothing to install, and no CAD seat needed. Open a tab and start.</p>
+        </div>
+        <div class="svc">
+          <h3>Free until you export</h3>
+          <p>Preview every part before you spend anything.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <section class="today" id="today">
     <div class="wrap today-grid">
       <div>
