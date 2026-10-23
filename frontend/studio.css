@@ -310,3 +310,26 @@ html[data-theme="dark"] .filecard .fc-warn{background:#3a2f12;border-color:#5b4a
 .asm table{width:100%;border-collapse:collapse;font-size:.82rem;}
 .asm th,.asm td{text-align:left;padding:5px 8px;border-top:1px solid var(--line);white-space:nowrap;}
 .asm th{color:var(--ink-soft);font-weight:600;border-top:0;}
+
+/* ---------- navy-black tint and glow ---------- */
+html[data-theme="dark"] .gate{
+  background:
+    radial-gradient(50% 60% at 85% 100%,rgba(84,120,200,.40) 0%,transparent 65%),
+    radial-gradient(45% 55% at 100% 70%,rgba(226,105,130,.30) 0%,transparent 66%),
+    radial-gradient(50% 60% at 70% 85%,rgba(154,92,170,.38) 0%,transparent 70%),
+    #000;
+}
+html[data-theme="dark"] .gate-card,
+html[data-theme="dark"] .composer,
+html[data-theme="dark"] .starter,
+html[data-theme="dark"] .part,
+html[data-theme="dark"] .filecard,
+html[data-theme="dark"] .modal-card{
+  background-color:#0B0B14;
+  border-color:#222234;
+}
+html[data-theme="dark"] .hello{
+  background:radial-gradient(40% 50% at 50% 0%,rgba(126,92,200,.22) 0%,transparent 70%);
+}
+html[data-theme="dark"] .side{background:#04040C;}
+html[data-theme="dark"] .bubble{background:#161624;}

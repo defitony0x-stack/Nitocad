@@ -22,14 +22,14 @@ html[data-theme="dark"]{
   --ink:#ECECEA;
   --ink-soft:#A2A2A8;
   --paper:#000000;
-  --fog:#0A0A0A;
-  --line:#222222;
+  --fog:#08080F;
+  --line:#1F1F2E;
   --orange:#262626;
   --dot:#F26A2E;
   --orange-deep:#D6D6DA;
   --gold:#D9B65F;
-  --surface:#0D0D0D;
-  --deep:#050505;
+  --surface:#0B0B12;
+  --deep:#0A0A18;
   --botchain-bright-deep:#3FD6A8;
 }
 
@@ -111,3 +111,61 @@ html[data-theme="dark"] .tag-miss{background:rgba(240,100,85,.14);color:#FF9A8C;
 
 /* dark only: no theme switch */
 .theme-toggle,.theme-slot .theme-toggle{display:none !important;}
+
+/* ---------- navy-black tint and soft glow (Mobi style) ---------- */
+html[data-theme="dark"]{
+  --glow-purple:rgba(154,92,170,.55);
+  --glow-pink:rgba(226,105,130,.42);
+  --glow-blue:rgba(84,120,200,.50);
+}
+
+/* dark feature panels: navy-black with a purple, pink and blue glow in the lower right */
+html[data-theme="dark"] .audience,
+html[data-theme="dark"] .pricing,
+html[data-theme="dark"] .svc.core{
+  background-color:#0A0A18;
+  background-image:
+    radial-gradient(60% 70% at 88% 108%,var(--glow-blue) 0%,transparent 62%),
+    radial-gradient(55% 65% at 100% 62%,var(--glow-pink) 0%,transparent 66%),
+    radial-gradient(60% 70% at 78% 78%,var(--glow-purple) 0%,transparent 70%);
+  background-repeat:no-repeat;
+}
+html[data-theme="dark"] .svc.core{border-color:#26263A;}
+
+/* hero: faint colour bloom behind the content */
+html[data-theme="dark"] .hero-v2{
+  background-image:
+    radial-gradient(46% 62% at 88% 8%,rgba(126,92,200,.30) 0%,transparent 70%),
+    radial-gradient(40% 55% at 10% 0%,rgba(70,110,200,.20) 0%,transparent 70%),
+    radial-gradient(38% 50% at 70% 100%,rgba(226,105,130,.16) 0%,transparent 70%);
+  background-repeat:no-repeat;
+}
+
+/* cards: navy-black surface with a soft top-right glow */
+html[data-theme="dark"] .spec,
+html[data-theme="dark"] .demo-shell,
+html[data-theme="dark"] .pv-card,
+html[data-theme="dark"] .step,
+html[data-theme="dark"] .job-card,
+html[data-theme="dark"] .price-peek,
+html[data-theme="dark"] .wp-card{
+  background-color:#0B0B14;
+  background-image:radial-gradient(70% 90% at 100% 0%,rgba(138,96,190,.16) 0%,rgba(226,105,130,.07) 45%,transparent 72%);
+  background-repeat:no-repeat;
+  border-color:#222234;
+}
+
+/* whitepaper hero */
+html[data-theme="dark"] .wp-hero{
+  background:
+    radial-gradient(50% 80% at 85% 0%,rgba(126,92,200,.30) 0%,transparent 70%),
+    radial-gradient(40% 70% at 12% 10%,rgba(70,110,200,.18) 0%,transparent 70%),
+    #000;
+}
+
+/* inputs and chips pick up the navy tint */
+html[data-theme="dark"] input,
+html[data-theme="dark"] textarea,
+html[data-theme="dark"] select{background:#0B0B14;border-color:#26263A;}
+html[data-theme="dark"] header{background:rgba(4,4,12,.82);}
+html[data-theme="dark"] .rig{background:#12121E;}
