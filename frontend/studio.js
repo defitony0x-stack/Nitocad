@@ -968,13 +968,6 @@ $("panel").addEventListener("click", async (e) => {
   }
 });
 
-/* theme */
-function flipTheme() {
-  const root = document.documentElement, next = root.getAttribute("data-theme") === "dark" ? "light" : "dark";
-  root.setAttribute("data-theme", next); try { localStorage.setItem("nitocad-theme", next); } catch (e) { /* ignore */ }
-}
-$("themeBtn").addEventListener("click", flipTheme);
-$("gateTheme").addEventListener("click", flipTheme);
 
 /* ============================================================ gate + routing */
 function showGate(show) { $("gate").hidden = !show; $("app").hidden = show; }
