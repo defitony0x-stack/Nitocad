@@ -285,6 +285,37 @@ html[data-theme="dark"] .filecard .fc-warn{background:#3a2f12;border-color:#5b4a
 .choices{margin-top:12px;display:grid;gap:12px;}
 .choice-q p{margin:0 0 6px;font-weight:600;}
 
+/* requirements panel (Specs tab) */
+.reqs{margin-top:16px;}
+.reqs h4{margin:0 0 8px;font-size:.7rem;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-soft);font-weight:600;}
+.req{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;border:1px solid var(--line);border-left-width:4px;border-radius:10px;padding:8px 10px;margin-bottom:8px;font-size:.84rem;}
+.req b{display:block;font-weight:600;}
+.req span{display:block;color:var(--ink-soft);font-size:.76rem;margin-top:2px;}
+.req.pass{border-left-color:var(--botchain-bright);}
+.req.fail{border-left-color:var(--orange);background:rgba(211,84,31,.07);}
+.req.unknown{border-left-color:var(--gold);}
+.req-x{border:0;background:none;color:var(--ink-soft);font-size:1.1rem;line-height:1;cursor:pointer;padding:2px 6px;}
+.req-x:hover{color:var(--orange-deep);}
+.req-none{margin:0 0 8px;color:var(--ink-soft);font-size:.82rem;}
+.req-add{display:flex;gap:8px;}
+.req-add input{flex:1;min-width:0;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:999px;padding:8px 14px;font:inherit;font-size:.84rem;}
+.req-add input:focus{outline:0;border-color:var(--orange);}
+
+/* assembly panel (Specs tab) */
+.asm{margin-top:16px;}
+.asm h4{margin:14px 0 8px;font-size:.7rem;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-soft);font-weight:600;}
+.asm h4:first-child{margin-top:0;}
+.asm-ok{margin:0;padding:8px 10px;border:1px solid rgba(19,165,125,.4);background:rgba(19,165,125,.07);border-radius:10px;font-size:.84rem;}
+.asm-find{list-style:none;margin:0;padding:0;display:grid;gap:6px;}
+.asm-find li{border:1px solid var(--line);border-left-width:4px;border-radius:10px;padding:7px 10px;font-size:.84rem;}
+.asm-find li.bad{border-left-color:var(--orange);background:rgba(211,84,31,.07);}
+.asm-find li.warn{border-left-color:var(--gold);}
+.asm-fine{margin:8px 0 0;color:var(--ink-soft);font-size:.74rem;}
+.asm-scroll{overflow-x:auto;margin-bottom:10px;border:1px solid var(--line);border-radius:12px;}
+.asm-table{width:100%;border-collapse:collapse;font-size:.8rem;}
+.asm-table th,.asm-table td{padding:7px 9px;text-align:left;border-top:1px solid var(--line);vertical-align:top;}
+.asm-table thead th{border-top:0;font-size:.68rem;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-soft);}
+.asm-table td small{display:block;color:var(--ink-soft);font-family:'IBM Plex Mono',monospace;font-size:.68rem;}
 /* manufacturability check */
 .check-card{margin-top:18px;padding:14px;border:1px solid var(--line);border-radius:14px;background:var(--surface);}
 .check-card p{margin:10px 0;line-height:1.5;}
@@ -299,18 +330,12 @@ html[data-theme="dark"] .filecard .fc-warn{background:#3a2f12;border-color:#5b4a
 .chk-tag.bad{color:#F87171;border-color:#F87171;}
 .chk-tag.nc,.chk-tag.info{color:var(--ink-soft);}
 .rnote{font-size:.78rem;color:var(--ink-soft);margin:8px 0 0;}
-
-/* templates and assemblies */
+/* template picker */
 .tpl-card{width:min(760px,100%);}
 .tpl-card input[type=search]{width:100%;box-sizing:border-box;margin:0 0 10px;padding:9px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);font:inherit;}
 .tpl-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px;margin-top:14px;}
 .tpl{display:flex;flex-direction:column;gap:8px;padding:12px;border:1px solid var(--line);border-radius:14px;background:var(--surface);}
 .tpl .tag{font-size:.7rem;border:1px solid var(--line);border-radius:999px;padding:1px 8px;color:var(--ink-soft);}
-.asm .tbl{overflow-x:auto;margin:8px 0;}
-.asm table{width:100%;border-collapse:collapse;font-size:.82rem;}
-.asm th,.asm td{text-align:left;padding:5px 8px;border-top:1px solid var(--line);white-space:nowrap;}
-.asm th{color:var(--ink-soft);font-weight:600;border-top:0;}
-
 /* ---------- navy-black tint and glow ---------- */
 html[data-theme="dark"] .gate{
   background:
@@ -324,7 +349,11 @@ html[data-theme="dark"] .composer,
 html[data-theme="dark"] .starter,
 html[data-theme="dark"] .part,
 html[data-theme="dark"] .filecard,
-html[data-theme="dark"] .modal-card{
+html[data-theme="dark"] .modal-card,
+html[data-theme="dark"] .check-card,
+html[data-theme="dark"] .tpl,
+html[data-theme="dark"] .req,
+html[data-theme="dark"] .asm-scroll{
   background-color:#0B0B14;
   border-color:#222234;
 }
@@ -333,3 +362,12 @@ html[data-theme="dark"] .hello{
 }
 html[data-theme="dark"] .side{background:#04040C;}
 html[data-theme="dark"] .bubble{background:#161624;}
+
+/* what the last edit changed */
+.edit-diff{margin-top:10px;border:1px solid var(--line);border-left-width:4px;border-radius:10px;padding:8px 10px;font-size:.82rem;max-width:520px;}
+.edit-diff.has-worse{border-left-color:var(--dot);}
+.edit-diff-h{font-size:.7rem;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-soft);font-weight:600;margin-bottom:4px;}
+.edit-diff ul{margin:0;padding-left:16px;}
+.edit-diff li{margin:2px 0;overflow-wrap:anywhere;}
+.edit-diff li.d-worse{color:var(--dot);}
+.edit-diff li.d-better{color:var(--botchain-bright-deep);}

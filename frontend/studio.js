@@ -37,7 +37,9 @@ const Backend = {
     return {
       reply: d.assistant_message.content, part: d.part ? fromServerPart(d.part) : null,
       needCredits: !!d.needs_credits, balance: d.balance,
-      choices: (d.assistant_message.meta && d.assistant_message.meta.choices) || []
+      choices: (d.assistant_message.meta && d.assistant_message.meta.choices) || [],
+      diff: d.diff || (d.assistant_message.meta && d.assistant_message.meta.diff) || null,
+      requirements: d.requirements || [], newRequirements: d.new_requirements || []
     };
   },
 
@@ -73,6 +75,13 @@ const Backend = {
       const blob = await fetchStl(part, true);
       return blobDownload(blob, (part.title || "part").replace(/\s+/g, "_") + ".stl");
     }
+    if (fmt.startsWith("pcb:")) {
+      const kind = fmt.slice(4);
+      const pr = await fetch(`${BASE}/pcb/jobs/${part.jobId}/link`, { method: "POST", headers: { Authorization: "Bearer " + session.session_id, "Content-Type": "application/json" }, body: JSON.stringify({ kind }) });
+      if (!pr.ok) { const e = await pr.json().catch(() => ({})); throw new Error(e.detail || "Download failed (HTTP " + pr.status + ").") }
+      const pinfo = await pr.json();
+      return deliver(BASE + pinfo.url, pinfo.filename || `${part.jobId}-${kind}`);
+    }
     const r = await fetch(`${BASE}/export/${fmt}/${part.jobId}/link`, { method: "POST", headers: { Authorization: "Bearer " + session.session_id } });
     if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.detail || "Export failed (HTTP " + r.status + ").") }
     const info = await r.json();
@@ -93,7 +102,8 @@ const Backend = {
     if (r.authExpired) return { authExpired: true };
     if (!r.ok) return { reply: r.detail || "I could not start that template. Please try again.", error: true };
     const d = r.data;
-    return { reply: d.assistant_message.content, part: d.part ? fromServerPart(d.part) : null, balance: d.balance, choices: [] };
+    return { reply: d.assistant_message.content, part: d.part ? fromServerPart(d.part) : null, balance: d.balance, choices: [],
+      requirements: d.requirements || [], newRequirements: d.new_requirements || [] };
   },
 
   /* Manufacturability check for one process: paid once per version and process, then reopened free. */
@@ -186,17 +196,18 @@ function fromServerPart(p) {
   const spec = p.spec || {};
   const tx = p.anchor_tx || null;
   return {
-    id: p.id, version: p.version, jobId: p.job_id, title: p.title, partType: p.part_type, paid: p.paid !== false, checks: p.checks || {}, assembly: p.assembly || null, generateCredits: p.generate_credits || 10, aiTier: p.ai_tier || "basic",
+    id: p.id, version: p.version, jobId: p.job_id, title: p.title, partType: p.part_type, paid: p.paid !== false, checks: p.checks || {}, generateCredits: p.generate_credits || 10, aiTier: p.ai_tier || "basic",
     params: flatParams({ parameters: spec.parameters || {} }), material: spec.material || "", notes: p.notes || [],
-    description: "", spec, anchor: tx ? { anchor_tx: tx, explorer_url: Auth.PINNED_CHAIN.explorer_url + "/tx/" + tx } : null
+    description: "", spec, anchor: tx ? { anchor_tx: tx, explorer_url: Auth.PINNED_CHAIN.explorer_url + "/tx/" + tx } : null,
+    facts: p.facts || {}, reqResults: p.requirement_results || []
   };
 }
 function fromServerChat(c) {
   const parts = {};
   (c.parts || []).forEach((p) => { parts[p.id] = fromServerPart(p); });
   return {
-    id: c.id, title: c.title, updatedAt: Date.parse(c.updated_at) || Date.now(), remote: true, loaded: true, parts,
-    messages: (c.messages || []).map((m) => ({ id: m.id, role: m.role, text: m.content, partId: m.part_id || undefined, needCredits: !!(m.meta && m.meta.needs_credits), choices: (m.meta && m.meta.choices) || [] }))
+    id: c.id, title: c.title, updatedAt: Date.parse(c.updated_at) || Date.now(), remote: true, loaded: true, parts, requirements: c.requirements || [],
+    messages: (c.messages || []).map((m) => ({ id: m.id, role: m.role, text: m.content, partId: m.part_id || undefined, needCredits: !!(m.meta && m.meta.needs_credits), choices: (m.meta && m.meta.choices) || [], diff: (m.meta && m.meta.diff) || null }))
   };
 }
 
@@ -462,17 +473,18 @@ function thumbSvg(kind) {
     gear: '<circle cx="42" cy="34" r="20" fill="#fff"/><circle cx="42" cy="34" r="6"/><path d="M42 10v6M42 52v6M18 34h6M60 34h6M25 17l4 4M55 47l4 4M59 17l-4 4M29 47l-4 4"/>',
     shaft: '<rect x="8" y="27" width="68" height="14" rx="2" fill="#fff"/><path d="M14 27v14M70 27v14"/>',
     box: '<path d="M14 26l28-12 28 12v22L42 60 14 48z" fill="#fff"/><path d="M14 26l28 12 28-12M42 38v22"/>',
+    assembly: '<rect x="10" y="46" width="64" height="10" rx="1" fill="#fff"/><path d="M24 46V24h12v12h22v10" fill="#fff"/><circle cx="30" cy="31" r="2"/><path d="M58 36v-8l8 4z"/>',
     bracket: '<path d="M18 18h14v28h34v10H18z" fill="#fff"/><circle cx="25" cy="27" r="2"/><circle cx="25" cy="42" r="2"/><circle cx="48" cy="51" r="2"/><circle cx="60" cy="51" r="2"/>'
   };
   return s + (shapes[kind] || shapes.bracket) + "</svg>";
 }
-function kindOf(part) { return part.demoKind || (/gear/.test(part.partType) ? "gear" : /shaft/.test(part.partType) ? "shaft" : /box|enclosure/.test(part.partType) ? "box" : "bracket"); }
+function kindOf(part) { return part.partType === "assembly" ? "assembly" : part.demoKind || (/gear/.test(part.partType) ? "gear" : /shaft/.test(part.partType) ? "shaft" : /box|enclosure/.test(part.partType) ? "box" : "bracket"); }
 function para(text) { return String(text).split(/\n\n+/).map((t) => "<p>" + esc(t).replace(/`([^`]+)`/g, "<code>$1</code>").replace(/\n/g, "<br>") + "</p>").join(""); }
 const ASSIST_AVA = '<div class="ava"><img src="logo-mark.png" alt=""></div>';
 
 function partCardHtml(c, part, isLatest) {
   const vers = versionsOf(c, part), v = vers.findIndex((p) => p.id === part.id) + 1;
-  const chips = Object.entries(part.params).slice(0, 4).map(([k, val]) => `<span class="spec-chip">${esc(k.replace(/_mm$/, ""))} ${esc(val)}${/_mm$/.test(k) ? " mm" : ""}</span>`).join("");
+  const chips = part.partType === "assembly" ? assemblyChips(part) : Object.entries(part.params).slice(0, 4).map(([k, val]) => `<span class="spec-chip">${esc(k.replace(/_mm$/, ""))} ${esc(val)}${/_mm$/.test(k) ? " mm" : ""}</span>`).join("");
   const anchored = part.anchor ? '<span class="ver anchored">anchored</span>' : "";
   return `<div class="part"><button class="part-top" data-part="${part.id}" aria-label="Open ${esc(part.title)} in viewer">` +
     `<div class="part-thumb">${thumbSvg(kindOf(part))}</div>` +
@@ -485,7 +497,7 @@ function partCardHtml(c, part, isLatest) {
 }
 function followupsHtml(part) {
   const k = kindOf(part);
-  const set = { gear: ["Add 4 lightening holes", "Make the bore 8 mm", "Use 30 teeth"], shaft: ["Add a keyway", "Make it 150 mm long", "Add a 2 mm chamfer"], box: ["Add 4 corner screw posts", "Make the walls 4 mm", "Add a vent slot"], bracket: ["Make it thicker", "Add 2 more holes", "Use 8 mm fillets"] }[k];
+  const set = { assembly: ["Make the base plate thicker", "Add another part on top", "Move the second part to the edge"], gear: ["Add 4 lightening holes", "Make the bore 8 mm", "Use 30 teeth"], shaft: ["Add a keyway", "Make it 150 mm long", "Add a 2 mm chamfer"], box: ["Add 4 corner screw posts", "Make the walls 4 mm", "Add a vent slot"], bracket: ["Make it thicker", "Add 2 more holes", "Use 8 mm fillets"] }[k];
   return '<div class="followups">' + set.map((t) => `<button class="chip" data-say="${esc(t)}">${esc(t)}</button>`).join("") + "</div>";
 }
 function renderThread(animateLast) {
@@ -503,10 +515,23 @@ function renderThread(animateLast) {
     const part = m.partId ? partOf(c, m.partId) : null;
     let extra = "";
     if (part) extra = partCardHtml(c, part, latest && latest.id === part.id && m === c.messages[c.messages.length - 1]);
+    if (m.diff) extra = diffHtml(m.diff) + extra;
     if (m.needCredits) extra = needCreditsHtml();
     if (m.choices && m.choices.length && m === c.messages[c.messages.length - 1]) extra += choicesHtml(m.choices);
     return `<div class="msg">${ASSIST_AVA}<div class="reply" data-mid="${m.id}">${para(m.text)}${extra}</div></div>`;
   }).join("");
+}
+/* What the last edit changed, measured on the build. Rows the server marks worse are highlighted. */
+function diffHtml(d) {
+  if (!d) return "";
+  const li = (cls, html) => `<li${cls ? ` class="${cls}"` : ""}>${html}</li>`;
+  const rows = [];
+  (d.spec || []).forEach((t) => rows.push(li("", esc(t))));
+  (d.facts || []).forEach((r) => rows.push(li(r.direction ? "d-" + r.direction : "", `<b>${esc(r.label)}</b> ${esc(String(r.before))} to ${esc(String(r.after))}`)));
+  (d.requirements || []).forEach((r) => rows.push(li(r.direction ? "d-" + r.direction : "", `<b>${esc(r.text)}</b> ${esc(String(r.before))} to ${esc(String(r.after))}`)));
+  if (!rows.length) return "";
+  const head = d.from_version && d.to_version ? `What changed, version ${d.from_version} to ${d.to_version}` : "What changed";
+  return `<div class="edit-diff${d.worse ? " has-worse" : ""}"><div class="edit-diff-h">${esc(head)}</div><ul>${rows.join("")}</ul></div>`;
 }
 /* Guidance from the AI as tappable questions. A tap sends the question and the answer together. */
 function choicesHtml(choices) {
@@ -555,16 +580,17 @@ function renderCanvas() {
     if (part.material) rows += `<div class="row"><span>material</span><span>${esc(part.material)}</span></div>`;
     let notes = "";
     if (part.notes && part.notes.length) notes = `<div class="note"><b>Notes on this part</b><ul>${part.notes.map((n) => `<li>${esc(n)}</li>`).join("")}</ul></div>`;
-    panel.innerHTML = `<div class="kv">${rows}</div>${notes}${assemblyHtml(part)}`;
+    panel.innerHTML = part.partType === "assembly" ? `${assemblyHtml(part)}${requirementsHtml(part)}` : `<div class="kv">${rows}</div>${notes}${requirementsHtml(part)}`;
   } else if (S.tab === "files") {
     const F = [["STEP", "step", "3D solid for CAD and CAM"], ["IGES", "iges", "3D solid, older systems"], ["DXF", "dxf", "2D cut layers for laser and CNC"], ["PDF", "pdf", "1:1 drawing"], ["GLB", "glb", "3D model for web viewers, AR and game engines"], ["3MF", "3mf", "3D model for slicers and print services"], ["URDF", "urdf", "Robot description (zip) for ROS and simulators"], ["STL", "stl", "Mesh for 3D printing"]];
     const lock = !part.paid;
-    const rowsF = part.partType === "assembly" ? F.filter((r) => r[1] !== "urdf") : F;   // a URDF is one rigid link
     const banner = lock ? `<div class="note"><b>Free preview</b><p>You can look at this version and download the STL mesh for free. Press Generate to unlock the STEP, IGES, DXF, PDF, GLB and 3MF files. That costs ${part.generateCredits || 10} credits, once for this version.</p><button class="btn btn-primary btn-sm" data-generate="${part.id}">Generate files · ${part.generateCredits || 10} credits</button></div>` : "";
+    const rowsF = part.partType === "assembly" ? F.filter((r) => r[1] !== "urdf") : F;   // a URDF is one rigid link
     panel.innerHTML = banner + '<div class="files">' + rowsF.map(([n, f, d]) => {
       const locked = lock && f !== "stl";
       return `<div class="file${locked ? " locked" : ""}"><span class="ext">${n}</span><div class="what"><b>${n} file</b><span>${locked ? "Unlocks when you press Generate" : d}</span></div><button class="btn btn-ghost btn-sm" ${locked ? "disabled" : `data-dl="${f}"`}>${locked ? "Locked" : "Download"}</button></div>`;
-    }).join("") + "</div>" + (lock ? "" : checkCardHtml(part));
+    }).join("") + (part.partType === "pcb_board" ? [["KICAD", "pcb:kicad", "KiCad project", "Open and edit in KiCad"], ["GERBER", "pcb:gerbers", "Gerber and drill files", "Send to a circuit board maker"], ["BOM", "pcb:bom", "Parts list", "CSV of every part"], ["POS", "pcb:pos", "Part positions", "For assembly machines"]].map(([n, f, t, d]) =>
+      `<div class="file${lock ? " locked" : ""}"><span class="ext">${n}</span><div class="what"><b>${t}</b><span>${lock ? "Unlocks when you press Generate" : d}</span></div><button class="btn btn-ghost btn-sm" ${lock ? "disabled" : `data-dl="${f}"`}>${lock ? "Locked" : "Download"}</button></div>`).join("") : "") + "</div>" + (part.partType === "pcb_board" && !lock ? '<div class="note"><p>Board files are built when you download them and can take up to a minute. Gerber, drill and part-position files need KiCad on the server.</p></div>' : "") + (lock ? "" : checkCardHtml(part));
   } else {
     if (part.anchor) {
       const tx = part.anchor.anchor_tx || "";
@@ -589,7 +615,9 @@ function reportHtml(r) {
   const notes = (r.assumptions || []).concat(r.disclaimer ? [r.disclaimer] : []).map((a) => `<p class="rnote">${esc(a)}</p>`).join("");
   return `<div class="report"><p class="rhead">${esc(r.headline || "")}</p>${rows}${notes}</div>`;
 }
+const NO_CHECK = new Set(["pcb_board", "building", "road_segment", "box_culvert", "retaining_wall"]);   // the server refuses these too
 function checkCardHtml(part) {
+  if (NO_CHECK.has(part.partType)) return "";
   if (part.partType === "assembly") return `<p class="rnote">The manufacturability check runs on single parts. Assemblies are not checked yet.</p>`;
   const cur = S.checkProc || "cnc", saved = part.checks || {};
   const price = (S.ai && S.ai.check_credits) || 5;
@@ -601,23 +629,6 @@ function checkCardHtml(part) {
 }
 /* The Specs-tab section for an assembly: its parts with positions and mass, then the findings.
    Positions come from the stored parts list, mass and size from the report the build produced. */
-function assemblyHtml(part) {
-  if (part.partType !== "assembly") return "";
-  const r = part.assembly, list = (part.spec && part.spec.parameters && part.spec.parameters.parts) || [];
-  const by = {}; if (r) r.parts.forEach((p) => { by[p.name] = p; });
-  const rows = list.map((p) => {
-    const m = by[p.name] || {};
-    return `<tr><td>${esc(p.name)}</td><td>${esc(p.part_type)}</td><td>${esc((p.position || []).map((n) => +(+n).toFixed(1)).join(", "))}</td>` +
-      `<td>${m.size_mm ? esc(m.size_mm.map((n) => +(+n).toFixed(1)).join(" x ")) : ""}</td><td>${m.mass_g != null ? esc(m.mass_g + " g") : ""}</td></tr>`;
-  }).join("");
-  const findings = r ? r.findings.map((f) => {
-    const [label, cls] = CHECK_TAG[f.status] || CHECK_TAG.info;
-    return `<div class="chk"><span class="chk-tag ${cls}">${label}</span><div><b>${esc(f.title)}</b><p>${esc(f.detail)}</p></div></div>`;
-  }).join("") : "";
-  const notes = r ? (r.assumptions || []).map((a) => `<p class="rnote">${esc(a)}</p>`).join("") : "";
-  return `<div class="check-card asm"><div class="kick">Assembly</div>${r ? `<p class="rhead">${esc(r.summary)}</p>` : ""}` +
-    `<div class="tbl"><table><thead><tr><th>Part</th><th>Type</th><th>Position mm</th><th>Size mm</th><th>Mass</th></tr></thead><tbody>${rows}</tbody></table></div>${findings}${notes}</div>`;
-}
 function demoReport(process) {
   return { process, process_label: process, headline: "0 problems, 1 to review, 2 passed, 1 not checked.", disclaimer: "Demo data, not a real check.",
     checks: [{ id: "closed", title: "Mesh is closed", status: "pass", detail: "Every edge is shared by two triangles." },
@@ -642,6 +653,65 @@ async function runCheck(btn, part, proc) {
   finally { S.checking = false; if (btn.isConnected) { btn.disabled = false; btn.textContent = label; } }
 }
 
+/* Assemblies: the parts list, what the overlap and floating-part checks found, and the mass. */
+function assemblyChips(part) {
+  const a = (part.facts && part.facts.assembly) || {}, bom = a.bom || {}, mp = a.mass_properties || {};
+  const chips = [`${bom.part_count || 0} parts`];
+  if (mp.complete) chips.push(`${mp.mass_g} g`);
+  const inter = (a.interferences || []).length, groups = (a.disconnected_groups || []).length;
+  chips.push(inter ? `${inter} overlap${inter === 1 ? "" : "s"}` : groups ? "floating parts" : "no overlaps");
+  return chips.map((c) => `<span class="spec-chip">${esc(c)}</span>`).join("");
+}
+function assemblyHtml(part) {
+  const a = (part.facts && part.facts.assembly) || {}, bom = a.bom || {}, mp = a.mass_properties || {};
+  const size = a.overall_size_mm, cg = mp.center_of_mass_mm;
+  let rows = `<div class="row"><span>parts</span><span>${bom.part_count || 0} (${bom.line_count || 0} on the list)</span></div>`;
+  if (size) rows += `<div class="row"><span>overall size</span><span>${size.map((v) => Number(v).toFixed(1)).join(" x ")} mm</span></div>`;
+  rows += `<div class="row"><span>mass</span><span>${mp.parts_counted ? esc(mp.mass_g) + " g" + (mp.complete ? "" : " (partial)") : "unknown"}</span></div>`;
+  if (cg && mp.complete) rows += `<div class="row"><span>centre of mass</span><span>${cg.map((v) => Number(v).toFixed(1)).join(", ")} mm</span></div>`;
+
+  const inter = a.interferences || [], groups = a.disconnected_groups || [], skipped = a.unchecked_pairs || [];
+  let found = "";
+  inter.forEach((i) => { found += `<li class="${i.severity === "major" ? "bad" : "warn"}"><b>${esc(i.a)}</b> and <b>${esc(i.b)}</b> overlap by ${esc(i.volume_mm3)} mm\u00b3${i.severity === "major" ? " (serious)" : ""}</li>`; });
+  groups.forEach((g) => { found += `<li class="warn">Not touching the rest: ${g.map(esc).join(", ")}</li>`; });
+  skipped.forEach((s) => { found += `<li class="warn">Could not check <b>${esc(s.a)}</b> against <b>${esc(s.b)}</b>: ${esc(s.reason)}</li>`; });
+  const checks = found
+    ? `<ul class="asm-find">${found}</ul>`
+    : '<p class="asm-ok">No overlaps or floating parts found.</p>';
+
+  /* One row per part (where it sits, how big, what it weighs) when the server sent them. Older saved
+     versions have only the grouped parts list, so that is the fallback. */
+  const num = (v) => +(+v).toFixed(1);
+  const per = (a.parts || []).map((p) => `<tr><td>${esc(p.name)}<small>${esc(p.part_type || "")}</small></td><td>${esc((p.position_mm || []).map(num).join(", "))}</td>` +
+    `<td>${p.size_mm ? esc(p.size_mm.map(num).join(" x ")) : ""}</td><td>${p.mass_g != null ? esc(p.mass_g) : "-"}</td></tr>`).join("");
+  const list = (bom.rows || []).map((r) => `<tr><td>${esc(r.item)}</td><td>${esc(r.quantity)}</td><td>${esc(r.names.length > 1 ? r.names[0] + " +" + (r.names.length - 1) : r.names[0])}<small>${esc(r.part_type)}</small></td>` +
+    `<td>${esc(r.material || "-")}</td><td>${r.total_mass_g == null ? "-" : esc(r.total_mass_g)}</td></tr>`).join("");
+  const table = per
+    ? `<div class="asm-scroll"><table class="asm-table"><thead><tr><th>Part</th><th>Position mm</th><th>Size mm</th><th>g</th></tr></thead><tbody>${per}</tbody></table></div>`
+    : list ? `<div class="asm-scroll"><table class="asm-table"><thead><tr><th>#</th><th>Qty</th><th>Part</th><th>Material</th><th>g</th></tr></thead><tbody>${list}</tbody></table></div>` : "";
+  const notes = (part.notes || []).length ? `<div class="note"><b>Notes</b><ul>${part.notes.map((n) => `<li>${esc(n)}</li>`).join("")}</ul></div>` : "";
+  return `<div class="kv">${rows}</div><div class="asm"><h4>Checks</h4>${checks}` +
+    `<p class="asm-fine">Geometric checks only. Not a fit, clearance or tolerance analysis.</p>` +
+    `<h4>Parts list</h4>${table}` +
+    (a.bom_csv ? `<button type="button" class="btn btn-ghost btn-sm" data-bom-csv>Download parts list (CSV)</button>` : "") + `</div>${notes}`;
+}
+/* Requirements: said once in the chat ("must fit in 100 x 80 x 60 mm"), re-checked on every version. */
+function requirementsHtml(part) {
+  if (DEMO) return "";
+  const rows = (part.reqResults || []).map((r) => {
+    const label = { pass: "Meets", fail: "Breaks", unknown: "Not measured" }[r.status] || r.status;
+    return `<div class="req ${esc(r.status)}"><div><b>${esc(r.text)}</b><span>${esc(label)}${r.detail ? " · " + esc(r.detail) : ""}</span></div>` +
+      `<button type="button" class="req-x" data-req-remove="${esc(r.id)}" aria-label="Remove requirement">\u00d7</button></div>`;
+  }).join("");
+  return `<div class="reqs"><h4>Requirements</h4>${rows || '<p class="req-none">None yet. Add one and every version is checked against it.</p>'}` +
+    `<div class="req-add"><input id="reqInput" type="text" maxlength="300" placeholder="e.g. must fit in 100 x 80 x 60 mm" aria-label="Add a requirement"><button type="button" class="btn btn-ghost btn-sm" data-req-add>Add</button></div></div>`;
+}
+async function changeRequirements(c, action) {
+  const r = await action();
+  if (r.authExpired) { Auth.clearSession(); route(); return; }
+  if (!r.ok) { toast(r.detail || "Could not change the requirement."); return; }
+  c.loaded = false; await loadChat(c); renderCanvas();
+}
 /* Press Generate: pay once for this version and unlock its full files. */
 async function generateFiles(btn, partId) {
   const c = chat(), part = c && partOf(c, partId);
@@ -698,7 +768,10 @@ async function send(text, templateId) {
   const msg = { id: uid(), role: "assistant", text: out.reply || "" };
   if (out.needCredits) msg.needCredits = true;
   if (out.choices && out.choices.length) msg.choices = out.choices;
-  if (out.part) { c.parts[out.part.id] = out.part; msg.partId = out.part.id; S.activePartId = out.part.id; }
+  if (out.diff) msg.diff = out.diff;
+  if (out.part) { c.parts[out.part.id] = out.part; msg.partId = out.part.id; S.activePartId = out.part.id; out.part.reqResults = out.requirements || []; }
+  else if (out.requirements && out.requirements.length) { const lp = lastPart(c); if (lp) lp.reqResults = out.requirements; }
+  if (out.newRequirements && out.newRequirements.length) c.requirements = [...(c.requirements || []), ...out.newRequirements];
   c.messages.push(msg); c.updatedAt = Date.now(); save();
   if (out.balance != null) setBalance(out.balance);
   refreshAi();
@@ -715,7 +788,9 @@ async function send(text, templateId) {
    so a misread number is caught by a human. File cards live in this browser session only. */
 const MAX_UPLOAD_MB = 15;
 const MESH_EXT = new Set(["stl", "obj", "glb", "gltf", "3mf"]);
-const SERVER_EXT = new Set(["step", "stp", "iges", "igs", "brep", "pdf", "png", "jpg", "jpeg", "webp"]);
+const SERVER_EXT = new Set(["step", "stp", "iges", "igs", "brep", "pdf", "png", "jpg", "jpeg", "webp",
+  /* 2D drawings and electronics */
+  "dxf", "svg", "kicad_pcb", "zip", "gbr", "ger", "gtl", "gbl", "gts", "gbs", "gto", "gbo", "gtp", "gbp", "gko", "gm1", "gm2", "gml", "g1", "g2", "g3", "g4", "drl", "xln", "exc"]);
 const extOf = (n) => (String(n).split(".").pop() || "").toLowerCase();
 const fmtBytes = (n) => n < 1048576 ? Math.max(1, Math.round(n / 1024)) + " KB" : (n / 1048576).toFixed(1) + " MB";
 const num2 = (v) => String(Math.round(v * 100) / 100);
@@ -805,7 +880,7 @@ async function attachFile(file) {
       showInViewer(obj, file.name);
       return;
     }
-    if (!SERVER_EXT.has(ext)) { hideWorking(); S.busy = false; return bad("This file type is not supported. Use STEP, IGES, BREP, PDF, PNG, JPG, WEBP, STL, OBJ, GLB or 3MF."); }
+    if (!SERVER_EXT.has(ext)) { hideWorking(); S.busy = false; return bad("This file type is not supported. Use STEP, IGES, BREP, DXF, SVG, KiCad (.kicad_pcb), Gerber (a .zip or single layer), PDF, PNG, JPG, WEBP, STL, OBJ, GLB or 3MF."); }
     const fd = new FormData(); fd.append("file", file, file.name);
     let res;
     try { res = await fetch(`${BASE}/files/analyze`, { method: "POST", headers: Auth.authHeader(), body: fd }); }
@@ -955,6 +1030,18 @@ $("panel").addEventListener("click", async (e) => {
   const gen = e.target.closest("[data-generate]"); if (gen) { await generateFiles(gen, part.id); return; }
   const proc = e.target.closest("[data-proc]"); if (proc) { S.checkProc = proc.dataset.proc; renderCanvas(); return; }
   const chk = e.target.closest("[data-check]"); if (chk) { await runCheck(chk, part, chk.dataset.check); return; }
+  if (e.target.closest("[data-bom-csv]")) {
+    const csv = part.facts && part.facts.assembly && part.facts.assembly.bom_csv;
+    if (csv) await blobDownload(new Blob([csv], { type: "text/csv" }), "parts_list.csv");
+    return;
+  }
+  if (e.target.closest("[data-req-add]")) {
+    const input = $("reqInput"), text = input ? input.value.trim() : "";
+    if (text) await changeRequirements(c, () => api("POST", `/chats/${c.id}/requirements`, { text }));
+    return;
+  }
+  const rm = e.target.closest("[data-req-remove]");
+  if (rm) { await changeRequirements(c, () => api("DELETE", `/chats/${c.id}/requirements/${rm.dataset.reqRemove}`)); return; }
   const dl = e.target.closest("[data-dl]");
   if (dl) {
     dl.disabled = true; const t = dl.textContent; dl.textContent = "Building";
