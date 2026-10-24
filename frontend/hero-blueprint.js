@@ -883,6 +883,9 @@ function boot() {
   function placeCamera(az, el_, cam, scale) {
     cam = cam || camera;
     const c = S.center, d = S.dist * (scale || 1);
+    // Scale the clipping planes with the part so big parts (a 300 mm brake disc, a 470 mm crankshaft) are not cut off.
+    const far = Math.max(400, d * 6), near = Math.max(0.1, d * 0.02);
+    if (cam.far !== far || cam.near !== near) { cam.far = far; cam.near = near; cam.updateProjectionMatrix(); }
     cam.position.set(
       c.x + d * Math.sin(az) * Math.cos(el_),
       c.y + d * Math.sin(el_),
