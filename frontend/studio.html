@@ -57,6 +57,11 @@
       <svg class="icon" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
       New design
     </button>
+    <div class="side-links">
+      <a href="assembly.html">Assemblies</a>
+      <a href="aerospace.html">Aerospace</a>
+      <a href="civil.html">Civil tools</a>
+    </div>
     <nav class="chat-list" id="chatList" aria-label="Chats"></nav>
     <div class="side-foot">
       <div class="acct">
@@ -94,8 +99,13 @@
 
     <div class="composer-wrap">
       <div class="ai-bar">
-        <label for="aiModel">AI</label>
-        <select id="aiModel" aria-label="Choose the AI that plans your part"></select>
+        <div class="eng-pick" id="tierPick">
+          <button type="button" class="eng-btn" id="tierBtn" aria-haspopup="listbox" aria-expanded="false" aria-label="Choose a plan for this message">
+            <span id="tierLabel">Basic</span>
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+          </button>
+          <ul class="eng-menu" id="tierMenu" role="listbox" hidden></ul>
+        </div>
         <button class="chip" id="tplBtn" type="button">Templates</button>
         <span class="ai-note" id="aiNote"></span>
       </div>
@@ -109,7 +119,7 @@
           <svg class="icon" viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
         </button>
       </div>
-      <div class="fineprint">Previews, changes, questions and reading an attached file are free. Generating the full files for a version uses credits, from 2 on Engine up to 40 on Advanced. Check dimensions before you manufacture.</div>
+      <div class="fineprint">Previews, changes and questions are free. Generating the full files uses credits, shown on the button. Check dimensions before you manufacture.</div>
     </div>
   </main>
 

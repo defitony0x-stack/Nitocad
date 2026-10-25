@@ -25,7 +25,8 @@ const Backend = {
      everything. Returns { reply, part?, needCredits?, balance?, authExpired?, error? }. */
   async send({ chat, text }) {
     if (DEMO) return Demo.send(text, lastPart(chat));
-    const r = await api("POST", `/chats/${chat.id}/messages`, { content: text, model: S.model });
+    let r = await api("POST", `/chats/${chat.id}/messages`, { content: text, ...(S.model ? { model: S.model } : {}) });
+    if (!r.ok && r.status === 422) r = await api("POST", `/chats/${chat.id}/messages`, { content: text });   // an older server that does not take "model"
     if (r.authExpired) return { authExpired: true };
     if (!r.ok) {
       const msg = r.status === 409 ? "I am still working on your last message. Give me a moment."
@@ -39,8 +40,45 @@ const Backend = {
       needCredits: !!d.needs_credits, balance: d.balance,
       choices: (d.assistant_message.meta && d.assistant_message.meta.choices) || [],
       diff: d.diff || (d.assistant_message.meta && d.assistant_message.meta.diff) || null,
+      candidates: publicOffer(d.candidates || (d.assistant_message.meta && d.assistant_message.meta.candidates)), messageId: d.assistant_message.id,
       requirements: d.requirements || [], newRequirements: d.new_requirements || []
     };
+  },
+
+  /* Thin, standard and heavy versions of a bracket: free previews, no AI. */
+  async offerCandidates(chat, part) {
+    if (DEMO) return { error: "Candidate designs need an account. Sign in to compare versions." };
+    const r = await api("POST", `/chats/${chat.id}/parts/${part.id}/candidates`);
+    if (r.authExpired) return { authExpired: true };
+    if (!r.ok) return { error: r.detail || "I could not build the versions. Please try again." };
+    const d = r.data;
+    return { reply: d.assistant_message.content, candidates: publicOffer(d.candidates), messageId: d.assistant_message.id, partId: d.assistant_message.part_id };
+  },
+
+  /* How much a part overlaps a reference file (STEP, IGES, BREP, STL, OBJ). Free; the server does not keep the file. */
+  async matchReference(chat, part, file) {
+    if (DEMO) return { error: "Comparing with a reference needs an account." };
+    const s = Auth.getSession();
+    if (!s) return { authExpired: true };
+    const fd = new FormData(); fd.append("file", file, file.name);
+    let res;
+    try { res = await fetch(`${BASE}/chats/${chat.id}/parts/${part.id}/match`, { method: "POST", headers: Auth.authHeader(), body: fd }); }
+    catch (e) { return { error: "I could not reach the server. Check your connection and try again." }; }
+    if (res.status === 401) return { authExpired: true };
+    let data = null; try { data = await res.json(); } catch (e) { /* empty */ }
+    if (!res.ok) return { error: (data && typeof data.detail === "string" && data.detail) || "I could not compare that file." };
+    return { reply: data.assistant_message.content, match: data.match, messageId: data.assistant_message.id };
+  },
+
+  /* Make one offered version the current part. The server reads the spec from the stored offer. */
+  async pickCandidate(chat, messageId, candidateId) {
+    if (DEMO) return { error: "Candidate designs need an account." };
+    const r = await api("POST", `/chats/${chat.id}/candidates/${encodeURIComponent(messageId)}/${encodeURIComponent(candidateId)}`);
+    if (r.authExpired) return { authExpired: true };
+    if (!r.ok) return { error: r.detail || "I could not switch to that version. Please try again." };
+    const d = r.data;
+    return { reply: d.assistant_message.content, part: d.part ? fromServerPart(d.part) : null, balance: d.balance,
+      requirements: d.requirements || [] };
   },
 
   async anchor(part) {
@@ -103,6 +141,7 @@ const Backend = {
     if (!r.ok) return { reply: r.detail || "I could not start that template. Please try again.", error: true };
     const d = r.data;
     return { reply: d.assistant_message.content, part: d.part ? fromServerPart(d.part) : null, balance: d.balance, choices: [],
+      build: d.build || (d.assistant_message.meta && d.assistant_message.meta.build) || null,
       requirements: d.requirements || [], newRequirements: d.new_requirements || [] };
   },
 
@@ -189,8 +228,27 @@ async function api(method, path, body) {
   } catch (e) { return { ok: false, status: 0, detail: "I could not reach the server. Check your connection and try again." }; }
   if (res.status === 401) return { authExpired: true };
   let data = null; try { data = await res.json(); } catch (e) { /* empty body */ }
-  const d = data && (data.detail || data.error);
-  return { ok: res.ok, status: res.status, data, detail: typeof d === "string" ? d : (d ? "Please check your message and try again." : "") };
+  const d = data && (data.detail || data.error || data.message);
+  let detail = errText(d);
+  if (!res.ok) {
+    console.warn("NitoCAD API", method, path, res.status, data);
+    if (!detail) detail = `The server answered ${res.status}. Please try again.`;
+  }
+  return { ok: res.ok, status: res.status, data, detail };
+}
+/* A readable line from whatever the server put in "detail": text, a list of validation errors, or an object. */
+function errText(d) {
+  if (!d) return "";
+  if (typeof d === "string") return d;
+  if (Array.isArray(d)) return d.map((e) => (e && e.msg) ? ((e.loc || []).filter((x) => x !== "body").join(".") + (e.loc && e.loc.length > 1 ? ": " : "") + e.msg) : String(e)).join("; ").slice(0, 240);
+  if (typeof d === "object") return String(d.message || d.error || d.detail || JSON.stringify(d)).slice(0, 240);
+  return String(d);
+}
+/* The offer as the cards need it. The stored message also holds specs and job ids, which stay on the server. */
+function publicOffer(o) {
+  if (!o || !Array.isArray(o.candidates) || !o.candidates.length) return null;
+  return { picked: o.picked || null, skipped: o.skipped || {}, metric: o.metric || null,
+    candidates: o.candidates.map((k) => ({ id: k.id, label: k.label, thickness_mm: k.thickness_mm, line: k.line || k.label })) };
 }
 function fromServerPart(p) {
   const spec = p.spec || {};
@@ -207,7 +265,7 @@ function fromServerChat(c) {
   (c.parts || []).forEach((p) => { parts[p.id] = fromServerPart(p); });
   return {
     id: c.id, title: c.title, updatedAt: Date.parse(c.updated_at) || Date.now(), remote: true, loaded: true, parts, requirements: c.requirements || [],
-    messages: (c.messages || []).map((m) => ({ id: m.id, role: m.role, text: m.content, partId: m.part_id || undefined, needCredits: !!(m.meta && m.meta.needs_credits), choices: (m.meta && m.meta.choices) || [], diff: (m.meta && m.meta.diff) || null }))
+    messages: (c.messages || []).map((m) => ({ id: m.id, role: m.role, text: m.content, partId: m.part_id || undefined, needCredits: !!(m.meta && m.meta.needs_credits), choices: (m.meta && m.meta.choices) || [], diff: (m.meta && m.meta.diff) || null, candidates: publicOffer(m.meta && m.meta.candidates), build: (m.meta && m.meta.build) || null, match: (m.meta && m.meta.match) || null, serverId: m.id }))
   };
 }
 
@@ -491,9 +549,17 @@ function partCardHtml(c, part, isLatest) {
     `<div class="part-meta"><div class="part-title">${esc(part.title)} <span class="ver">v${v}</span>${anchored}</div><div class="part-specs">${chips}</div></div>` +
     `<span class="part-open">Open <svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px"><path d="M9 6l6 6-6 6"/></svg></span></button>` +
     `<div class="part-actions">` + (part.paid
-      ? `<button class="chip" data-export="${part.id}">Download files</button><button class="chip" data-part="${part.id}" data-tab="chain">Anchor on-chain</button>`
-      : `<button class="btn btn-primary btn-sm" data-generate="${part.id}">Generate files · ${part.generateCredits || 10} credits</button><span class="preview-tag">Free preview</span>`) + `</div></div>` +
+      ? `${compareChip(part)}${matchChip(part)}<button class="chip" data-export="${part.id}">Download files</button><button class="chip" data-part="${part.id}" data-tab="chain">Anchor on-chain</button>`
+      : `<button class="btn btn-primary btn-sm" data-generate="${part.id}">Generate files · ${part.generateCredits || 10} credits</button>${compareChip(part)}${matchChip(part)}<span class="preview-tag">Free preview</span>`) + `</div></div>` +
     (isLatest ? followupsHtml(part) : "");
+}
+function matchChip(part) {
+  return !DEMO && part.partType !== "assembly" && part.partType !== "imported"
+    ? `<button class="chip" data-match="${part.id}">Compare with a reference file</button>` : "";
+}
+function compareChip(part) {
+  return !DEMO && (part.partType === "l_bracket" || part.partType === "motor_mount")
+    ? `<button class="chip" data-compare="${part.id}">Compare thin / standard / heavy</button>` : "";
 }
 function followupsHtml(part) {
   const k = kindOf(part);
@@ -516,6 +582,9 @@ function renderThread(animateLast) {
     let extra = "";
     if (part) extra = partCardHtml(c, part, latest && latest.id === part.id && m === c.messages[c.messages.length - 1]);
     if (m.diff) extra = diffHtml(m.diff) + extra;
+    if (m.candidates) extra += candidatesHtml(m);
+    if (m.build) extra = buildLineHtml(m.build) + extra;
+    if (m.match) extra += matchHtml(m.match);
     if (m.needCredits) extra = needCreditsHtml();
     if (m.choices && m.choices.length && m === c.messages[c.messages.length - 1]) extra += choicesHtml(m.choices);
     return `<div class="msg">${ASSIST_AVA}<div class="reply" data-mid="${m.id}">${para(m.text)}${extra}</div></div>`;
@@ -533,13 +602,43 @@ function diffHtml(d) {
   const head = d.from_version && d.to_version ? `What changed, version ${d.from_version} to ${d.to_version}` : "What changed";
   return `<div class="edit-diff${d.worse ? " has-worse" : ""}"><div class="edit-diff-h">${esc(head)}</div><ul>${rows.join("")}</ul></div>`;
 }
+/* Reference match: how much of the combined volume the part and the reference share. */
+function matchHtml(r) {
+  if (!r || typeof r.match_percent !== "number") return "";
+  const sz = (a) => (a || []).map((x) => num2(x)).join(" × ") + " mm";
+  const notes = (r.notes || []).map((n) => `<li>${esc(n)}</li>`).join("");
+  return `<div class="match"><div class="match-score">${esc(r.match_percent.toFixed(1))}%</div>` +
+    `<div class="match-body"><b>${esc(r.verdict)}</b> · version ${esc(String(r.version || ""))} vs ${esc(r.filename || "reference")}` +
+    `<dl><dt>Your part</dt><dd>${esc(sz(r.size_generated_mm))}</dd><dt>Reference</dt><dd>${esc(sz(r.size_reference_mm))}</dd>` +
+    `<dt>Shared volume</dt><dd>${esc(num2(r.overlap_volume_mm3 / 1000))} cm³</dd></dl>` +
+    (notes ? `<ul class="match-notes">${notes}</ul>` : "") + `</div></div>`;
+}
+/* "Built in 1.2 s, no AI cost": measured on the server for template builds, which use no AI. */
+function buildLineHtml(b) {
+  if (!b || typeof b.seconds !== "number") return "";
+  return `<div class="build-line">Built in ${esc(b.seconds.toFixed(1))} s</div>`;
+}
+/* Thin, standard and heavy versions to pick from. A tap makes that version the current part. */
+function candidatesHtml(m) {
+  const o = m.candidates;
+  if (!o || !o.candidates || !o.candidates.length) return "";
+  const mid = m.serverId || m.id;
+  const cards = o.candidates.map((k) => {
+    const on = o.picked === k.id;
+    const detail = String(k.line).replace(/^[^:]+:\s*/, "");
+    return `<div class="cand${on ? " on" : ""}"><div class="cand-h">${esc(k.label)}</div><div class="cand-b">${esc(detail)}</div>` +
+      `<button class="btn btn-sm${on ? "" : " btn-primary"}" data-pick="${esc(mid)}" data-cand="${esc(k.id)}"${on ? " disabled" : ""}>${on ? "Selected" : "Use this"}</button></div>`;
+  }).join("");
+  const skipped = Object.values(o.skipped || {});
+  return `<div class="cands">${cards}</div>` + (skipped.length ? `<p class="cand-note">${esc(skipped.join(". "))}.</p>` : "");
+}
 /* Guidance from the AI as tappable questions. A tap sends the question and the answer together. */
 function choicesHtml(choices) {
   return '<div class="choices">' + choices.map((q) => `<div class="choice-q"><p>${esc(q.question)}</p><div class="followups">` +
     q.options.map((o) => `<button class="chip" data-say="${esc(q.question + " " + o)}">${esc(o)}</button>`).join("") + "</div></div>").join("") + "</div>";
 }
 function needCreditsHtml() {
-  return `<div class="need-credits"><b>You are out of credits</b><p>Generating the full files costs credits, and the price depends on the AI you used. Messages are free within each AI's daily allowance.</p><button class="btn btn-primary btn-sm" data-buy="open">Get credits</button></div>`;
+  return `<div class="need-credits"><b>You are out of credits</b><p>Generating the full files costs credits. Messages are free within each plan's daily allowance.</p><button class="btn btn-primary btn-sm" data-buy="open">Get credits</button></div>`;
 }
 function scrollEnd(smooth) { const t = $("thread"); t.scrollTo({ top: t.scrollHeight, behavior: smooth ? "smooth" : "auto" }); }
 
@@ -582,10 +681,11 @@ function renderCanvas() {
     if (part.notes && part.notes.length) notes = `<div class="note"><b>Notes on this part</b><ul>${part.notes.map((n) => `<li>${esc(n)}</li>`).join("")}</ul></div>`;
     panel.innerHTML = part.partType === "assembly" ? `${assemblyHtml(part)}${requirementsHtml(part)}` : `<div class="kv">${rows}</div>${notes}${requirementsHtml(part)}`;
   } else if (S.tab === "files") {
-    const F = [["STEP", "step", "3D solid for CAD and CAM"], ["IGES", "iges", "3D solid, older systems"], ["DXF", "dxf", "2D cut layers for laser and CNC"], ["PDF", "pdf", "1:1 drawing"], ["GLB", "glb", "3D model for web viewers, AR and game engines"], ["3MF", "3mf", "3D model for slicers and print services"], ["URDF", "urdf", "Robot description (zip) for ROS and simulators"], ["STL", "stl", "Mesh for 3D printing"]];
+    const F = [["STEP", "step", "3D solid for CAD and CAM"], ["IGES", "iges", "3D solid, older systems"], ["DXF", "dxf", "2D cut layers for laser and CNC"], ["PDF", "pdf", "1:1 drawing"], ["GLB", "glb", "3D model for web viewers, AR and game engines"], ["3MF", "3mf", "3D model for slicers and print services"], ["URDF", "urdf", "Robot description (zip) for ROS and simulators"], ["RECIPE", "recipe", "Spec JSON, CadQuery script and STEP (zip)"], ["STL", "stl", "Mesh for 3D printing"]];
     const lock = !part.paid;
     const banner = lock ? `<div class="note"><b>Free preview</b><p>You can look at this version and download the STL mesh for free. Press Generate to unlock the STEP, IGES, DXF, PDF, GLB and 3MF files. That costs ${part.generateCredits || 10} credits, once for this version.</p><button class="btn btn-primary btn-sm" data-generate="${part.id}">Generate files · ${part.generateCredits || 10} credits</button></div>` : "";
-    const rowsF = part.partType === "assembly" ? F.filter((r) => r[1] !== "urdf") : F;   // a URDF is one rigid link
+    const rowsF = (part.partType === "assembly" ? F.filter((r) => r[1] !== "urdf") : F)   // a URDF is one rigid link
+      .filter((r) => r[1] !== "recipe" || part.partType !== "imported");   // an attached file has no recipe
     panel.innerHTML = banner + '<div class="files">' + rowsF.map(([n, f, d]) => {
       const locked = lock && f !== "stl";
       return `<div class="file${locked ? " locked" : ""}"><span class="ext">${n}</span><div class="what"><b>${n} file</b><span>${locked ? "Unlocks when you press Generate" : d}</span></div><button class="btn btn-ghost btn-sm" ${locked ? "disabled" : `data-dl="${f}"`}>${locked ? "Locked" : "Download"}</button></div>`;
@@ -624,7 +724,7 @@ function checkCardHtml(part) {
   const label = (CHECK_PROCESSES.find((p) => p[0] === cur) || CHECK_PROCESSES[0])[2];
   const chips = CHECK_PROCESSES.map(([id, short]) => `<button class="chip${id === cur ? " on" : ""}" data-proc="${id}">${short}${saved[id] ? " · done" : ""}</button>`).join("");
   const body = saved[cur] ? reportHtml(saved[cur])
-    : `<p>Checks this version against general rules for ${label}, such as wall thickness, corners, holes, draft or overhangs. It runs no AI and reads the part's mesh and dimensions. Guidance only, not a certified review.</p><button class="btn btn-primary btn-sm" data-check="${cur}">Run check · ${price} credits</button>`;
+    : `<p>Checks this version against general rules for ${label}, such as wall thickness, corners, holes, draft or overhangs. It reads the part's mesh and dimensions. Guidance only, not a certified review.</p><button class="btn btn-primary btn-sm" data-check="${cur}">Run check · ${price} credits</button>`;
   return `<div class="check-card"><div class="kick">Manufacturability check</div><div class="followups">${chips}</div>${body}</div>`;
 }
 /* The Specs-tab section for an assembly: its parts with positions and mass, then the findings.
@@ -729,6 +829,57 @@ async function generateFiles(btn, partId) {
   } catch (err) { toast(err.message || "Could not generate the files."); }
   finally { S.generating = false; if (btn.isConnected) { btn.disabled = false; btn.textContent = label; } }
 }
+async function compareVersions(partId) {
+  const c = chat(), part = c && partOf(c, partId);
+  if (!part || S.busy) return;
+  S.busy = true; toast("Building thin and heavy versions...");
+  let r;
+  try { r = await Backend.offerCandidates(c, part); } catch (e) { r = { error: "Something went wrong building the versions." }; }
+  S.busy = false;
+  if (r.authExpired) { toast("Your session expired. Sign in again."); return; }
+  if (r.error) { toast(r.error); return; }
+  c.messages.push({ id: uid(), role: "assistant", text: r.reply, partId: part.id, candidates: r.candidates, serverId: r.messageId });
+  c.updatedAt = Date.now(); save(); renderThread(); scrollEnd(true);
+}
+function chooseReference(partId) {
+  const c = chat(), part = c && partOf(c, partId);
+  if (!part || S.busy) return;
+  const input = document.createElement("input");
+  input.type = "file"; input.accept = ".step,.stp,.iges,.igs,.brep,.stl,.obj";
+  input.addEventListener("change", () => { const f = input.files && input.files[0]; if (f) matchReference(part, f); });
+  input.click();
+}
+async function matchReference(part, file) {
+  const c = chat();
+  if (!c || S.busy) return;
+  if (file.size > MAX_UPLOAD_MB * 1048576) { toast(`That file is over ${MAX_UPLOAD_MB} MB.`); return; }
+  S.busy = true; toast("Comparing with your reference...");
+  let r;
+  try { r = await Backend.matchReference(c, part, file); } catch (e) { r = { error: "Something went wrong comparing the files." }; }
+  S.busy = false;
+  if (r.authExpired) { toast("Your session expired. Sign in again."); return; }
+  if (r.error) { toast(r.error); return; }
+  c.messages.push({ id: uid(), role: "assistant", text: r.reply, partId: part.id, match: r.match, serverId: r.messageId });
+  c.updatedAt = Date.now(); save(); renderThread(); scrollEnd(true);
+}
+async function pickVersion(messageId, candidateId) {
+  const c = chat();
+  if (!c || S.busy) return;
+  S.busy = true;
+  let r;
+  try { r = await Backend.pickCandidate(c, messageId, candidateId); } catch (e) { r = { error: "Something went wrong switching versions." }; }
+  S.busy = false;
+  if (r.authExpired) { toast("Your session expired. Sign in again."); return; }
+  if (r.error || !r.part) { toast(r.error || "I could not switch to that version."); return; }
+  const offer = c.messages.find((m) => (m.serverId || m.id) === messageId);
+  if (offer && offer.candidates) offer.candidates.picked = candidateId;
+  c.parts[r.part.id] = r.part; r.part.reqResults = r.requirements || [];
+  c.messages.push({ id: uid(), role: "assistant", text: r.reply, partId: r.part.id });
+  S.activePartId = r.part.id; c.updatedAt = Date.now(); save();
+  if (r.balance != null) setBalance(r.balance);
+  renderThread(); renderSide(); scrollEnd(true);
+  openCanvas(r.part.id, "specs"); if (innerWidth <= 1180) closeCanvas();
+}
 function openCanvas(partId, tab) {
   const c = chat(); if (!c) return;
   if (partId) S.activePartId = partId;
@@ -769,6 +920,8 @@ async function send(text, templateId) {
   if (out.needCredits) msg.needCredits = true;
   if (out.choices && out.choices.length) msg.choices = out.choices;
   if (out.diff) msg.diff = out.diff;
+  if (out.build) msg.build = out.build;
+  if (out.candidates) { msg.candidates = out.candidates; msg.serverId = out.messageId; }
   if (out.part) { c.parts[out.part.id] = out.part; msg.partId = out.part.id; S.activePartId = out.part.id; out.part.reqResults = out.requirements || []; }
   else if (out.requirements && out.requirements.length) { const lp = lastPart(c); if (lp) lp.reqResults = out.requirements; }
   if (out.newRequirements && out.newRequirements.length) c.requirements = [...(c.requirements || []), ...out.newRequirements];
@@ -943,7 +1096,7 @@ async function openTemplates() {
       `<button class="btn btn-primary btn-sm" data-tpl="${esc(t.id)}" data-title="${esc(t.title)}">Use template</button></div>`).join("") : "<p class=\"muted\">No templates match.</p>";
     m.querySelectorAll("[data-cat]").forEach((b) => b.classList.toggle("on", b.dataset.cat === cat));
   };
-  m.innerHTML = `<div class="modal-card tpl-card"><h3>Templates</h3><p>Start from a known part, then change it by chat. A template is a free preview, and no AI is used.</p>` +
+  m.innerHTML = `<div class="modal-card tpl-card"><h3>Templates</h3><p>Start from a known part, then change it by chat. A template is a free preview built by the engine.</p>` +
     `<input type="search" id="tplSearch" placeholder="Search, for example bracket" aria-label="Search templates"><div class="followups"><button class="chip" data-cat="all">All</button>` +
     data.categories.map((c) => `<button class="chip" data-cat="${esc(c.id)}">${esc(c.label)}</button>`).join("") + `</div><div class="tpl-grid"></div>` +
     `<div class="modal-foot"><button class="btn btn-ghost btn-sm" data-close>Close</button></div></div>`;
@@ -961,7 +1114,7 @@ async function openCredits() {
   try { cfg = DEMO ? { credit_price_bot: 0.01, pack_1000_price_bot: 1, pack_1000_credits: 1000, pack_10000_price_bot: 10, pack_10000_credits: 10000 } : await Auth.getChainConfig(); } catch (e) { toast("Could not load pricing. Try again shortly."); return; }
   const tiers = [["single", "1 credit", cfg.credit_price_bot], ["pack_1000", (cfg.pack_1000_credits || 1000).toLocaleString() + " credits", cfg.pack_1000_price_bot], ["pack_10000", (cfg.pack_10000_credits || 10000).toLocaleString() + " credits", cfg.pack_10000_price_bot]];
   const m = document.createElement("div"); m.className = "modal"; m.setAttribute("role", "dialog"); m.setAttribute("aria-modal", "true");
-  m.innerHTML = `<div class="modal-card"><h3>Get credits</h3><p>Paid in native BOT on BOT Chain. Generating the files for a version costs 2 to 40 credits depending on the AI, and every export format is included. Messages are free within each AI's daily allowance.</p>` +
+  m.innerHTML = `<div class="modal-card"><h3>Get credits</h3><p>Paid in native BOT on BOT Chain. Generating the files for a version uses credits, and every export format is included. Messages are free within each plan's daily allowance. See the pricing page for details.</p>` +
     tiers.map(([id, label, price]) => `<div class="tier"><div><b>${label}</b><span>${price} BOT</span></div><button class="btn btn-primary btn-sm" data-tier="${id}">Buy</button></div>`).join("") +
     `<div class="modal-foot"><button class="btn btn-ghost btn-sm" data-close>Close</button></div></div>`;
   document.body.appendChild(m);
@@ -1020,6 +1173,9 @@ $("chatList").addEventListener("click", async (e) => {
 $("threadInner").addEventListener("click", async (e) => {
   const say = e.target.closest("[data-say]"); if (say) { send(say.dataset.say); return; }
   const buy = e.target.closest("[data-buy]"); if (buy) { openCredits(); return; }
+  const pick = e.target.closest("[data-pick]"); if (pick && !pick.disabled) { await pickVersion(pick.dataset.pick, pick.dataset.cand); return; }
+  const mch = e.target.closest("[data-match]"); if (mch) { chooseReference(mch.dataset.match); return; }
+  const cmp = e.target.closest("[data-compare]"); if (cmp) { await compareVersions(cmp.dataset.compare); return; }
   const gen = e.target.closest("[data-generate]"); if (gen) { await generateFiles(gen, gen.dataset.generate); return; }
   const ex = e.target.closest("[data-export]");
   if (ex) { S.activePartId = ex.dataset.export; openCanvas(ex.dataset.export, "files"); return; }
@@ -1084,7 +1240,9 @@ const DEMO_AI = { default: "basic:deepseek", check_credits: 5, tiers: [
   { id: "advanced", label: "Advanced", messages_per_day: 4, messages_left: 4, generate_credits: 40, models: [{ id: "advanced:claude", label: "Claude", available: true }] }
 ] };
 try { S.model = localStorage.getItem("nitocad_studio_model") || "basic:deepseek"; } catch (e) { S.model = "basic:deepseek"; }
-let aiBound = false;
+const TIER_NAME = { engine: "Engine", basic: "Basic", plus: "Standard", advanced: "Advanced" };
+const tierName = (t) => TIER_NAME[t.id] || t.label;
+const tierUsable = (t) => t.models.some((m) => m.available);
 async function loadAi() {
   if (DEMO) S.ai = DEMO_AI;
   else {
@@ -1095,30 +1253,47 @@ async function loadAi() {
   }
   const usable = S.ai.tiers.flatMap((t) => t.models.filter((m) => m.available).map((m) => m.id));
   if (!usable.includes(S.model)) S.model = S.ai.default;
-  if (!aiBound) {
-    aiBound = true;
-    const tb = $("tplBtn"); if (tb) tb.addEventListener("click", openTemplates);
-    $("aiModel").addEventListener("change", (e) => {
-      S.model = e.target.value;
-      try { localStorage.setItem("nitocad_studio_model", S.model); } catch (err) { /* private mode */ }
-      renderAiBar();
-    });
-  }
   renderAiBar();
 }
 function refreshAi() { loadAi().catch(() => {}); }
+function setTier(id) {
+  const t = S.ai && S.ai.tiers.find((x) => x.id === id);
+  if (!t || !tierUsable(t)) return;
+  if (!t.models.some((m) => m.id === S.model && m.available)) S.model = t.models.find((m) => m.available).id;
+  try { localStorage.setItem("nitocad_studio_model", S.model); } catch (err) { /* private mode */ }
+  renderAiBar();
+}
 function renderAiBar() {
   if (!S.ai) return;
-  const sel = $("aiModel");
-  sel.innerHTML = S.ai.tiers.map((t) => `<optgroup label="${esc(t.label)} · Generate ${t.generate_credits} credits">` +
-    t.models.map((m) => `<option value="${esc(m.id)}"${m.available ? "" : " disabled"}${m.id === S.model ? " selected" : ""}>${esc(m.label)}${m.available ? "" : " (not set up yet)"}</option>`).join("") + "</optgroup>").join("");
-  const t = S.ai.tiers.find((x) => x.models.some((m) => m.id === S.model)) || S.ai.tiers[0];
-  const left = t.messages_per_day == null ? "No daily limit" : `${t.messages_left} of ${t.messages_per_day} messages left today`;
-  $("aiNote").textContent = `${left} · Generate ${t.generate_credits} credits`;
+  const cur = S.ai.tiers.find((x) => x.models.some((m) => m.id === S.model)) || S.ai.tiers[0];
+  $("tierLabel").textContent = tierName(cur);
+  $("tierMenu").innerHTML = S.ai.tiers.map((t) => {
+    const ok = tierUsable(t), on = t.id === cur.id;
+    const meta = !ok ? "Soon" : t.messages_per_day == null ? "No daily limit" : `${t.messages_left} left today`;
+    return `<li role="option" tabindex="${ok ? 0 : -1}" data-tier="${esc(t.id)}" aria-selected="${on}" ${ok ? "" : 'aria-disabled="true"'} class="${on ? "on" : ""}${ok ? "" : " off"}"><span>${esc(tierName(t))}</span><small>${esc(meta)}</small></li>`;
+  }).join("");
+  $("aiNote").textContent = cur.messages_per_day == null ? "" : `${cur.messages_left} of ${cur.messages_per_day} messages left today`;
 }
+function tierMenu(open) {
+  const m = $("tierMenu"), b = $("tierBtn");
+  m.hidden = !open; b.setAttribute("aria-expanded", String(open));
+  if (open) { const on = m.querySelector(".on") || m.querySelector("li:not(.off)"); if (on) on.focus(); }
+}
+$("tierBtn").addEventListener("click", () => { if (S.ai) tierMenu($("tierMenu").hidden); else refreshAi(); });
+$("tierMenu").addEventListener("click", (e) => { const li = e.target.closest("[data-tier]"); if (!li || li.classList.contains("off")) return; setTier(li.dataset.tier); tierMenu(false); $("tierBtn").focus(); });
+$("tierMenu").addEventListener("keydown", (e) => {
+  const items = [...$("tierMenu").querySelectorAll("li:not(.off)")], i = items.indexOf(document.activeElement);
+  if (e.key === "ArrowDown") { e.preventDefault(); (items[i + 1] || items[0]).focus(); }
+  else if (e.key === "ArrowUp") { e.preventDefault(); (items[i - 1] || items[items.length - 1]).focus(); }
+  else if (e.key === "Enter" || e.key === " ") { e.preventDefault(); if (document.activeElement.dataset.tier) document.activeElement.click(); }
+  else if (e.key === "Escape") { tierMenu(false); $("tierBtn").focus(); }
+});
+document.addEventListener("click", (e) => { if (!e.target.closest("#tierPick")) tierMenu(false); });
+/* Templates never depended on the model list: bind it at start so it works even if /ai/models is slow or fails. */
+$("tplBtn").addEventListener("click", openTemplates);
 
 async function loadConfig() {
-  document.querySelector(".fineprint").textContent = "Messages are free within each AI's daily allowance. Generating the full files costs credits, shown on the button. Check dimensions before you manufacture.";
+  document.querySelector(".fineprint").textContent = "Previews, changes and questions are free. Generating the full files uses credits, shown on the button. Check dimensions before you manufacture.";
 }
 let booted = false;
 function route() {

@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Assembly | NitoCAD</title>
+<meta name="description" content="Check how parts fit together: mates, placements, open interfaces and what a change moves.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="theme.css">
+<script src="theme.js"></script>
+<style>
+  :root{--r:14px;}
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.55 'IBM Plex Sans',system-ui,sans-serif;-webkit-font-smoothing:antialiased;}
+  a{color:inherit;}
+  .wrap{max-width:1020px;margin:0 auto;padding:0 18px;}
+  header{border-bottom:1px solid var(--line);}
+  header .wrap{display:flex;align-items:center;justify-content:space-between;gap:14px;height:62px;}
+  .logo{font-family:'Fraunces',serif;font-style:italic;font-size:1.35rem;text-decoration:none;}
+  .logo span{color:#E8601C;}
+  nav{display:flex;gap:16px;flex-wrap:wrap;font-size:.9rem;}
+  nav a{text-decoration:none;color:var(--ink-soft);font-weight:500;}
+  nav a:hover,nav a[aria-current]{color:var(--ink);}
+  main{padding:26px 0 80px;}
+  h1{font:600 2rem 'Fraunces',serif;margin:0 0 6px;}
+  h2{font:600 1.2rem 'Fraunces',serif;margin:0 0 10px;}
+  .lead{color:var(--ink-soft);max-width:68ch;margin:0 0 20px;}
+  .card{background:var(--surface,transparent);border:1px solid var(--line);border-radius:var(--r);padding:18px;margin-bottom:16px;}
+  .tabs{display:flex;gap:6px;border-bottom:1px solid var(--line);margin-bottom:18px;overflow-x:auto;}
+  .tabs button{background:none;border:0;border-bottom:3px solid transparent;color:var(--ink-soft);font:600 .92rem inherit;font-family:inherit;padding:10px 14px;cursor:pointer;white-space:nowrap;}
+  .tabs button[aria-selected="true"]{color:var(--ink);border-bottom-color:#E8601C;}
+  .panel{display:none;}.panel.on{display:block;}
+  textarea{width:100%;min-height:260px;resize:vertical;font:400 .8rem/1.5 'IBM Plex Mono',monospace;color:var(--ink);background:transparent;border:1px solid var(--line);border-radius:10px;padding:12px;}
+  input{font:inherit;color:var(--ink);background:transparent;border:1px solid var(--line);border-radius:10px;padding:8px 10px;width:100%;}
+  label{display:block;font-size:.8rem;font-weight:600;color:var(--ink-soft);margin:10px 0 4px;}
+  .btn{display:inline-flex;align-items:center;gap:8px;border:1.5px solid #E8601C;background:#E8601C;color:#fff;font:600 .9rem inherit;font-family:inherit;padding:10px 18px;border-radius:999px;cursor:pointer;text-decoration:none;}
+  .btn.ghost{background:transparent;color:var(--ink);border-color:var(--line);}
+  .btn:disabled{opacity:.5;cursor:wait;}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:12px;}
+  table{width:100%;border-collapse:collapse;font-size:.85rem;}
+  th,td{padding:7px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top;}
+  th{color:var(--ink-soft);font-weight:600;}
+  .mono{font-family:'IBM Plex Mono',monospace;font-size:.8rem;}
+  .scroll{overflow-x:auto;}
+  .pill{display:inline-block;padding:1px 9px;border-radius:999px;font-size:.72rem;font-weight:600;border:1px solid var(--line);}
+  .pill.error{color:#ff8a80;border-color:#ff8a80;}.pill.warning{color:#f0b429;border-color:#f0b429;}.pill.info{color:var(--ink-soft);}.pill.ok{color:#4fd1a5;border-color:#4fd1a5;}
+  .err{border:1px solid #ff8a80;color:#ff8a80;border-radius:10px;padding:10px 12px;font-size:.9rem;}
+  .muted{color:var(--ink-soft);font-size:.88rem;}
+  .tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;}
+  .gate{text-align:center;padding:60px 10px;}
+  [hidden]{display:none!important;}
+</style>
+</head>
+<body>
+<header><div class="wrap">
+  <a href="index.html" class="logo">Nit<span>o</span>CAD</a>
+  <nav aria-label="Site"><a href="index.html">Home</a><a href="studio.html">CAD Studio</a><a href="assembly.html" aria-current="page">Assembly</a><a href="aerospace.html">Aerospace</a><a href="civil.html">Civil tools</a><a href="pricing.html">Pricing</a></nav>
+</div></header>
+
+<main><div class="wrap">
+  <h1>Assembly</h1>
+  <p class="lead">Check how parts fit together before you build them. Mates place the parts, open interfaces and clashes are flagged, and a what-if shows what a change moves. Nothing here builds geometry or spends credits. To build and export an assembly, start one from Templates in CAD Studio.</p>
+
+  <div class="card gate" id="gate" hidden>
+    <h2>Sign in to check assemblies</h2>
+    <p class="muted">The checks use your NitoCAD account and are free.</p>
+    <a class="btn" href="studio.html">Sign in through CAD Studio</a>
+  </div>
+
+  <div id="app">
+    <div class="tabs" role="tablist">
+      <button role="tab" aria-selected="true" data-tab="check">Check</button>
+      <button role="tab" aria-selected="false" data-tab="whatif">What if</button>
+      <button role="tab" aria-selected="false" data-tab="catalog">Catalog</button>
+    </div>
+
+    <section class="panel on" id="p-check">
+      <div class="card">
+        <h2>Assembly spec</h2>
+        <p class="muted">Parts, then mates written as <span class="mono">part.interface</span>. The starter below is a wheel corner module.</p>
+        <textarea id="spec" spellcheck="false" aria-label="Assembly spec (JSON)"></textarea>
+        <div class="row">
+          <button class="btn" id="run">Check assembly</button>
+          <button class="btn ghost" id="reset" type="button">Reset to starter</button>
+          <a class="btn ghost" href="studio.html">Start one in CAD Studio</a>
+        </div>
+      </div>
+      <div id="out"></div>
+    </section>
+
+    <section class="panel" id="p-whatif">
+      <div class="card">
+        <h2>What does this change move?</h2>
+        <p class="muted">Uses the spec from the Check tab. Pick a part and the values to change, for example <span class="mono">{"rotor_diameter_mm": 330}</span>.</p>
+        <label for="wpart">Part id</label><input id="wpart" value="rotor" autocomplete="off">
+        <label for="wchg">Changes (JSON)</label><input id="wchg" class="mono" value='{}' autocomplete="off">
+        <div class="row"><button class="btn" id="runWhat">Show impact</button></div>
+      </div>
+      <div id="outWhat"></div>
+    </section>
+
+    <section class="panel" id="p-catalog">
+      <div class="card"><h2>Named assemblies</h2><div id="named" class="muted">Loading...</div></div>
+      <div class="card"><h2>Parts you can mate</h2><div id="ifaces" class="scroll muted">Loading...</div></div>
+      <div class="card"><h2>Which interfaces can mate</h2><div id="rules" class="tags muted">Loading...</div></div>
+    </section>
+  </div>
+</div></main>
+
+<script src="config.js"></script>
+<script src="auth.js"></script>
+<script>
+(function () {
+  "use strict";
+  var Auth = window.NitoAuth, BASE = Auth.API_BASE;
+  var $ = function (id) { return document.getElementById(id); };
+  var esc = function (v) { var d = document.createElement("div"); d.textContent = v == null ? "" : String(v); return d.innerHTML; };
+  var STARTER = {
+    name: "wheel_corner_module", root: "subframe",
+    parts: [
+      { id: "subframe", part_type: "subframe", parameters: {} },
+      { id: "arm", part_type: "control_arm", parameters: {} },
+      { id: "ball_joint", part_type: "ball_joint", parameters: {} },
+      { id: "knuckle", part_type: "steering_knuckle", parameters: {} },
+      { id: "hub", part_type: "wheel_hub", parameters: {} },
+      { id: "rotor", part_type: "brake_rotor", parameters: {} }
+    ],
+    mates: [
+      { a: "subframe.left_pivot_front", b: "arm.pivot_front" },
+      { a: "subframe.left_pivot_rear", b: "arm.pivot_rear" },
+      { a: "arm.ball_joint_socket", b: "ball_joint.housing" },
+      { a: "ball_joint.stud", b: "knuckle.ball_joint_seat" },
+      { a: "knuckle.bearing_bore", b: "hub.bearing_journal" },
+      { a: "hub.rotor_face", b: "rotor.hub_face" },
+      { a: "hub.rotor_pilot", b: "rotor.hub_bore" },
+      { a: "hub.stud_pattern", b: "rotor.bolt_pattern" }
+    ]
+  };
+
+  function errText(d) {
+    if (!d) return "";
+    if (typeof d === "string") return d;
+    if (Array.isArray(d)) return d.map(function (e) { return e && e.msg ? e.msg : String(e); }).join("; ");
+    return String(d.message || d.error || JSON.stringify(d));
+  }
+  async function call(method, path, body) {
+    var s = Auth.getSession();
+    if (path.indexOf("/api/assembly/catalog") !== 0 && !s) { show(false); return { error: "Sign in first." }; }
+    var res;
+    try {
+      res = await fetch(BASE + path, { method: method, headers: Object.assign(s ? { Authorization: "Bearer " + s.session_id } : {}, body ? { "Content-Type": "application/json" } : {}), body: body ? JSON.stringify(body) : undefined });
+    } catch (e) { return { error: "Could not reach the server. Check your connection and try again." }; }
+    if (res.status === 401) { Auth.clearSession(); show(false); return { error: "Your session ended. Sign in again." }; }
+    var data = null; try { data = await res.json(); } catch (e) {}
+    if (!res.ok) return { error: errText(data && data.detail) || ("The server answered " + res.status + ".") };
+    return { data: data };
+  }
+  function show(signed) { $("gate").hidden = signed; $("app").hidden = !signed; }
+
+  /* tabs */
+  document.querySelector(".tabs").addEventListener("click", function (e) {
+    var b = e.target.closest("[data-tab]"); if (!b) return;
+    document.querySelectorAll(".tabs button").forEach(function (x) { x.setAttribute("aria-selected", String(x === b)); });
+    document.querySelectorAll(".panel").forEach(function (p) { p.classList.toggle("on", p.id === "p-" + b.dataset.tab); });
+  });
+
+  function readSpec() {
+    try { return { spec: JSON.parse($("spec").value) }; }
+    catch (e) { return { error: "The spec is not valid JSON: " + e.message }; }
+  }
+  function findings(list) {
+    if (!list || !list.length) return '<p><span class="pill ok">No findings</span></p>';
+    return '<div class="scroll"><table><tr><th>Level</th><th>What</th><th>Where</th></tr>' + list.map(function (f) {
+      return '<tr><td><span class="pill ' + esc(f.severity) + '">' + esc(f.severity) + '</span></td><td>' + esc(f.message) + '</td><td class="mono">' + esc([f.a, f.b].filter(Boolean).join(" ↔ ")) + '</td></tr>';
+    }).join("") + "</table></div>";
+  }
+  function pos(p) { return p ? (p.position || p.translation || []).map(function (v) { return Number(v).toFixed(1); }).join(", ") : "not placed"; }
+
+  $("run").addEventListener("click", async function () {
+    var r = readSpec(), out = $("out");
+    if (r.error) { out.innerHTML = '<div class="err">' + esc(r.error) + "</div>"; return; }
+    var b = $("run"); b.disabled = true; out.innerHTML = '<p class="muted">Checking...</p>';
+    var res = await call("POST", "/api/assembly/analyze", { spec: r.spec });
+    b.disabled = false;
+    if (res.error) { out.innerHTML = '<div class="err">' + esc(res.error) + "</div>"; return; }
+    var a = res.data, errs = (a.findings || []).filter(function (f) { return f.severity === "error"; }).length;
+    out.innerHTML =
+      '<div class="card"><h2>' + esc(a.name || "Assembly") + ' <span class="pill ' + (a.ok ? "ok" : "error") + '">' + (a.ok ? "Fits together" : errs + " problem" + (errs === 1 ? "" : "s")) + "</span></h2>" +
+      '<p class="muted">Root: <span class="mono">' + esc(a.root || "none") + '</span> · Build order: <span class="mono">' + esc((a.build_order || []).join(" → ")) + "</span></p></div>" +
+      '<div class="card"><h2>Findings</h2>' + findings(a.findings) + "</div>" +
+      '<div class="card"><h2>Parts</h2><div class="scroll"><table><tr><th>Part</th><th>Type</th><th>Position (mm)</th><th>Placed by</th><th>Corrections</th></tr>' +
+      (a.parts || []).map(function (p) { return "<tr><td class=\"mono\">" + esc(p.id) + "</td><td>" + esc(p.part_type) + '</td><td class="mono">' + esc(pos(p.placement)) + "</td><td>" + esc(p.placed_by || "") + "</td><td>" + esc(Object.keys(p.corrections || {}).length || "none") + "</td></tr>"; }).join("") +
+      "</table></div></div>" +
+      '<div class="card"><h2>Mates</h2><div class="scroll"><table><tr><th>A</th><th>B</th><th>Result</th></tr>' +
+      (a.mates || []).map(function (m) { return '<tr><td class="mono">' + esc(m.a) + '</td><td class="mono">' + esc(m.b) + "</td><td>" + esc(m.status || m.result || (m.ok === false ? "check" : "ok")) + "</td></tr>"; }).join("") + "</table></div></div>";
+  });
+
+  $("runWhat").addEventListener("click", async function () {
+    var r = readSpec(), out = $("outWhat"), chg;
+    if (r.error) { out.innerHTML = '<div class="err">' + esc(r.error) + "</div>"; return; }
+    try { chg = JSON.parse($("wchg").value || "{}"); } catch (e) { out.innerHTML = '<div class="err">The changes are not valid JSON.</div>'; return; }
+    var b = $("runWhat"); b.disabled = true; out.innerHTML = '<p class="muted">Working it out...</p>';
+    var res = await call("POST", "/api/assembly/impact", { spec: r.spec, part_id: $("wpart").value.trim(), changes: chg });
+    b.disabled = false;
+    if (res.error) { out.innerHTML = '<div class="err">' + esc(res.error) + "</div>"; return; }
+    out.innerHTML = '<div class="card"><h2>Impact</h2><pre class="mono scroll" style="white-space:pre-wrap;margin:0">' + esc(JSON.stringify(res.data, null, 2)) + "</pre></div>";
+  });
+
+  $("reset").addEventListener("click", function () { $("spec").value = JSON.stringify(STARTER, null, 2); });
+
+  async function loadCatalog() {
+    var res = await call("GET", "/api/assembly/catalog");
+    if (res.error) { ["named", "ifaces", "rules"].forEach(function (id) { $(id).innerHTML = '<span class="err">' + esc(res.error) + "</span>"; }); return; }
+    var c = res.data, named = c.named_assemblies || {};
+    $("named").innerHTML = Object.keys(named).length ? Object.keys(named).map(function (k) { return "<p><b>" + esc(k.replace(/_/g, " ")) + '</b><br>Say something like: <span class="mono">' + esc(named[k][0]) + "</span></p>"; }).join("") : "None yet.";
+    var ifs = c.interfaces || {}, rows = Array.isArray(ifs) ? ifs : Object.keys(ifs).map(function (k) { return { part_type: k, interfaces: ifs[k] }; });
+    $("ifaces").innerHTML = rows.length ? "<table><tr><th>Part type</th><th>Interfaces</th></tr>" + rows.map(function (r) {
+      var list = r.interfaces || r.names || [];
+      list = Array.isArray(list) ? list.map(function (i) { return typeof i === "string" ? i : (i.name + (i.kind ? " (" + i.kind + ")" : "")); }) : Object.keys(list);
+      return "<tr><td>" + esc(r.part_type || r.name || "") + '</td><td class="mono">' + esc(list.join(", ")) + "</td></tr>";
+    }).join("") + "</table>" : "Nothing listed.";
+    $("rules").innerHTML = (c.mating_rules || []).map(function (p) { return '<span class="pill">' + esc(p[0]) + " ↔ " + esc(p[1]) + "</span>"; }).join("") || "Nothing listed.";
+  }
+
+  $("spec").value = JSON.stringify(STARTER, null, 2);
+  show(!!Auth.getSession());
+  Auth.onChange(function () { show(!!Auth.getSession()); });
+  loadCatalog();
+})();
+</script>
+</body>
+</html>
