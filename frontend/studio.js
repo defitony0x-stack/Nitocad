@@ -8,6 +8,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { STLLoader } from "three/addons/loaders/STLLoader.js";
+import { analyzeMesh, describeFace, describePair, fmtLen } from "./mesh-measure.js";
 import { applyRealisticLook, prepareStlGeometry, buildPartObject, materialFor, setWireframe, disposeObject } from "./viewer-look.js";
 
 const Auth = window.NitoAuth;
@@ -607,8 +608,63 @@ async function startLiveCard(host, part) {
   done.type = "button"; done.className = "p3d-done"; done.textContent = "Done"; host.appendChild(done);
   const setActive = (on) => {
     live.active = on; controls.enabled = on; dom.style.touchAction = on ? "none" : "pan-y"; host.classList.toggle("active", on);
-    if (hint) hint.textContent = on ? "Drag to rotate · pinch or scroll to zoom" : "Tap the model to rotate it · tap a value to change it";
+    if (hint) hint.textContent = on ? "Drag to rotate · tap a face to measure" : "Tap the model to rotate it · tap a value to change it";
+    if (!on) clearPick();
   };
+  /* Face picking: tap a face for its size, tap a second one for what lies between them. */
+  const info = document.createElement("div"); info.className = "p3d-info"; info.hidden = true; host.appendChild(info);
+  live.picks = []; live.marks = [];
+  const clearPick = () => {
+    for (const m of live.marks) { if (live.mesh) live.mesh.remove(m); m.geometry.dispose(); m.material.dispose(); }
+    live.marks = []; live.picks = []; info.hidden = true; info.innerHTML = ""; if (hint) hint.style.display = "";
+    kick(200);
+  };
+  const mark = (face, color) => {
+    const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.BufferAttribute(live.analysis.trianglePositions(face), 3));
+    const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.6, side: THREE.DoubleSide, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
+    live.mesh.add(m); live.marks.push(m);
+  };
+  const showPick = () => {
+    const [a, b] = live.picks;
+    const d = b ? describePair(a, b) : describeFace(a);
+    if (!d) return;
+    info.hidden = false; if (hint) hint.style.display = "none";
+    const canResize = !b && d.isHole && !onEngine();
+    info.innerHTML = `<b>${esc(d.title)}</b>` + d.lines.map((l) => `<span>${esc(l)}</span>`).join("") +
+      (b ? "" : "<em>Tap another face to measure to it</em>") +
+      `<div class="p3d-info-actions">${canResize ? '<button type="button" data-p3d="resize">Change size</button>' : ""}<button type="button" data-p3d="clear">Clear</button></div>`;
+    info._diameter = d.diameter;
+  };
+  info.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-p3d]"); if (!b) return; e.stopPropagation();
+    if (b.dataset.p3d === "clear") { clearPick(); return; }
+    if (b.dataset.p3d === "resize") {
+      const old = +info._diameter.toFixed(2);
+      info.querySelector(".p3d-info-actions").innerHTML = `<input type="number" step="any" inputmode="decimal" value="${old}" aria-label="New diameter in mm"><button type="button" data-p3d="apply">Set</button>`;
+      info.querySelector("input").focus();
+    } else if (b.dataset.p3d === "apply") {
+      const v = Number(info.querySelector("input").value), old = +info._diameter.toFixed(2);
+      if (v > 0 && v !== old) send(`Change the ${old} mm hole to ${v} mm`);
+    }
+  });
+  live.pick = (e) => {
+    if (!live.mesh) return;
+    if (!live.analysis) { try { const g = live.mesh.geometry; live.analysis = analyzeMesh(g.attributes.position.array, g.index ? g.index.array : null); } catch (err) { return; } }
+    const r = dom.getBoundingClientRect();
+    const ray = new THREE.Raycaster(); ray.setFromCamera(new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -(((e.clientY - r.top) / r.height) * 2 - 1)), camera);
+    const hit = ray.intersectObject(live.mesh, false)[0];
+    const face = hit && live.analysis.faceAt(hit.faceIndex);
+    if (!face) return;
+    if (live.picks.length >= 2) clearPick();
+    live.picks.push(face); mark(face, live.picks.length === 1 ? 0xe8601c : 0x2f7de1);
+    showPick(); kick(300);
+  };
+  let down = null;
+  dom.addEventListener("pointerdown", (e) => { down = { x: e.clientX, y: e.clientY, t: performance.now() }; });
+  dom.addEventListener("pointerup", (e) => {
+    if (live.active && down && Math.hypot(e.clientX - down.x, e.clientY - down.y) < 6 && performance.now() - down.t < 600) live.pick(e);
+    down = null;
+  });
   host.addEventListener("click", (e) => { if (e.target.closest(".p3d-done")) setActive(false); else if (!live.active) setActive(true); });
   live.away = (e) => { if (live.active && !host.contains(e.target)) setActive(false); };
   document.addEventListener("pointerdown", live.away, true);
@@ -626,11 +682,12 @@ async function startLiveCard(host, part) {
     if (live.dead) { disposeObject(obj); return; }
     const { wrap, midY, size } = fitModel(obj);
     scene.add(wrap); live.model = wrap;
+    wrap.traverse((o) => { if (o.isMesh && !live.mesh) live.mesh = o; });
     camera.position.set(95, 80 + midY, 95); controls.target.set(0, midY, 0); controls.update();
     host.classList.add("ready"); host.querySelectorAll("svg").forEach((n) => n.remove());
     const tag = document.createElement("span"); tag.className = "p3d-dim"; tag.textContent = sizeLabel(size); host.appendChild(tag);
     kick(1500);
-  } catch (e) { host.classList.add("failed"); }
+  } catch (e) { console.warn("3D card could not load:", e); host.classList.add("failed"); }
 }
 function snapshotOf(part) {
   const key = part.id + ":" + (part.jobId || part.demoKind || "");
