@@ -418,3 +418,22 @@ html[data-theme="dark"] .bubble{background:#161624;}
 .side-links .side-asm{padding:6px 0;}
 .tool-frame{flex:1;width:100%;border:0;background:var(--paper);}
 .ai-bar{flex-wrap:wrap;}
+
+/* live 3D in the chat */
+.part-3d{position:relative;height:clamp(200px,34vh,280px);background:#EDF2F4;overflow:hidden;touch-action:pan-y;}
+.part-3d>svg{position:absolute;inset:0;margin:auto;width:92px;height:76px;opacity:.55;}
+.part-3d.ready>svg{display:none;}
+.p3d-canvas{display:block;width:100%;height:100%;outline:0;cursor:grab;}
+.part-3d img{display:block;width:100%;height:100%;object-fit:cover;}
+.p3d-hint{position:absolute;left:10px;bottom:8px;right:10px;font-size:.68rem;color:#5b6772;pointer-events:none;opacity:.9;}
+.part-3d:not(.live) .p3d-hint,.part-3d.failed .p3d-hint{display:none;}
+.p3d-dim{position:absolute;right:10px;top:8px;font:500 .7rem 'IBM Plex Mono',monospace;color:#1C1C1E;background:rgba(255,255,255,.85);border-radius:6px;padding:2px 7px;pointer-events:none;}
+.spec-chip.editable{cursor:pointer;border:1px dashed var(--line);}
+.spec-chip.editable:hover{border-color:var(--orange);color:var(--ink);}
+.chip-input{width:68px;font:inherit;color:var(--ink);background:var(--surface);border:1px solid var(--orange);border-radius:5px;padding:0 4px;}
+
+.part-3d.active{touch-action:none;box-shadow:inset 0 0 0 2px var(--orange);}
+.part-3d.live:not(.active) .p3d-canvas{cursor:pointer;}
+.p3d-done{display:none;position:absolute;right:10px;bottom:8px;font:600 .75rem inherit;font-family:inherit;color:#fff;background:var(--orange);border:0;border-radius:999px;padding:5px 14px;cursor:pointer;}
+.part-3d.active .p3d-done{display:block;}
+.part-3d.live .p3d-hint{right:84px;}
