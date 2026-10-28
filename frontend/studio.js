@@ -503,12 +503,16 @@ function kindOf(part) { return part.partType === "assembly" ? "assembly" : part.
 function para(text) { return String(text).split(/\n\n+/).map((t) => "<p>" + esc(t).replace(/`([^`]+)`/g, "<code>$1</code>").replace(/\n/g, "<br>") + "</p>").join(""); }
 const ASSIST_AVA = '<div class="ava"><img src="logo-mark.png" alt=""></div>';
 
-function partCardHtml(c, part, isLatest) {
+function partCardHtml(c, part, isLatest, isNewest) {
   const vers = versionsOf(c, part), v = vers.findIndex((p) => p.id === part.id) + 1;
-  const chips = part.partType === "assembly" ? assemblyChips(part) : Object.entries(part.params).slice(0, 4).map(([k, val]) => `<span class="spec-chip">${esc(k.replace(/_mm$/, ""))} ${esc(val)}${/_mm$/.test(k) ? " mm" : ""}</span>`).join("");
+  const editable = !!isNewest && part.partType !== "assembly";
+  const chips = part.partType === "assembly" ? assemblyChips(part) : Object.entries(part.params).slice(0, 4).map(([k, val]) => {
+    const label = `${esc(k.replace(/_mm$/, "").replace(/_/g, " "))} ${esc(val)}${/_mm$/.test(k) ? " mm" : ""}`;
+    return editable && typeof val === "number" ? `<span class="spec-chip editable" role="button" tabindex="0" data-edit-param="${esc(k)}" data-val="${esc(val)}" title="Tap to change">${label}</span>` : `<span class="spec-chip">${label}</span>`;
+  }).join("");
   const anchored = part.anchor ? '<span class="ver anchored">anchored</span>' : "";
-  return `<div class="part"><button class="part-top" data-part="${part.id}" aria-label="Open ${esc(part.title)} in viewer">` +
-    `<div class="part-thumb">${thumbSvg(kindOf(part))}</div>` +
+  return `<div class="part"><div class="part-3d${isNewest ? " live" : ""}" data-3d="${part.id}">${thumbSvg(kindOf(part))}<span class="p3d-hint">${isNewest ? "Tap the model to rotate it · tap a value to change it" : ""}</span></div>` +
+    `<button class="part-top" data-part="${part.id}" aria-label="Open ${esc(part.title)} in viewer">` +
     `<div class="part-meta"><div class="part-title">${esc(part.title)} <span class="ver">v${v}</span>${anchored}</div><div class="part-specs">${chips}</div></div>` +
     `<span class="part-open">Open <svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px"><path d="M9 6l6 6-6 6"/></svg></span></button>` +
     `<div class="part-actions">` + (part.paid
@@ -524,6 +528,7 @@ function followupsHtml(part) {
 function renderThread(animateLast) {
   const inner = $("threadInner"), c = chat();
   if (!c || !c.messages.length) {
+    closeLiveCard();
     inner.innerHTML = `<div class="hello"><div class="mark"><img src="logo-mark.png" alt=""></div><h1>What are we building?</h1>` +
       `<p>Describe a part in plain words. Then keep talking to change it. Every version stays in this chat.</p>` +
       `<div class="starters">${STARTERS.map(([t, p]) => `<button class="starter" data-say="${esc(p)}"><b>${esc(t)}</b><span>${esc(p)}</span></button>`).join("")}</div></div>`;
@@ -535,13 +540,156 @@ function renderThread(animateLast) {
     if (m.fileCard) return `<div class="msg">${ASSIST_AVA}<div class="reply" data-mid="${m.id}">${fileCardHtml(m)}</div></div>`;
     const part = m.partId ? partOf(c, m.partId) : null;
     let extra = "";
-    if (part) extra = partCardHtml(c, part, latest && latest.id === part.id && m === c.messages[c.messages.length - 1]);
+    if (part) extra = partCardHtml(c, part, latest && latest.id === part.id && m === c.messages[c.messages.length - 1], !!latest && latest.id === part.id);
     if (m.diff) extra = diffHtml(m.diff) + extra;
     if (m.needCredits) extra = needCreditsHtml();
     if (m.choices && m.choices.length && m === c.messages[c.messages.length - 1]) extra += choicesHtml(m.choices);
     if (m.retry && m === c.messages[c.messages.length - 1]) extra += `<div class="followups"><button class="chip" data-retry="${m.id}">Try again</button></div>`;
     return `<div class="msg">${ASSIST_AVA}<div class="reply" data-mid="${m.id}">${para(m.text)}${extra}</div></div>`;
   }).join("");
+  mountCardViewers(c);
+}
+
+/* ============================================================ 3D in the chat */
+/* The newest part in the chat is a live, rotatable model. Older versions show a still picture of the same model.
+   The STL is fetched once per part and parsed fresh for each view, so closing one never breaks another. */
+const stlCache = new Map();
+async function stlBuffer(part) {
+  const key = part.id + ":" + (part.jobId || part.demoKind || "");
+  if (!stlCache.has(key)) stlCache.set(key, fetchStl(part, false).catch((e) => { stlCache.delete(key); throw e; }));
+  return (await stlCache.get(key)).slice(0);
+}
+async function partModel(part) {
+  if (part.demoKind) { await sleep(120); return Demo.geometry(part.demoKind, part.params); }
+  const geo = prepareStlGeometry(new STLLoader().parse(await stlBuffer(part)));
+  geo.center(); geo.rotateX(-Math.PI / 2);
+  return buildPartObject(geo, part.material);
+}
+function fitModel(obj) {
+  const wrap = new THREE.Group(); wrap.add(obj);
+  const b0 = new THREE.Box3().setFromObject(wrap), size = b0.getSize(new THREE.Vector3());
+  wrap.scale.setScalar(70 / (Math.max(size.x, size.y, size.z) || 1));
+  const b1 = new THREE.Box3().setFromObject(wrap), c = b1.getCenter(new THREE.Vector3());
+  wrap.position.set(-c.x, -b1.min.y, -c.z);
+  return { wrap, midY: (b1.max.y - b1.min.y) / 2, size };
+}
+function sizeLabel(size) {
+  const big = Math.max(size.x, size.y, size.z) >= 3000, f = (v) => big ? (v / 1000).toFixed(2) : v.toFixed(1);
+  return `${f(size.x)} x ${f(size.z)} x ${f(size.y)} ${big ? "m" : "mm"}`;
+}
+function newStage(w, h, preserve) {
+  const scene = new THREE.Scene(); scene.background = new THREE.Color(0xEDF2F4);
+  const camera = new THREE.PerspectiveCamera(40, w / h, 0.1, 2000);
+  const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: !!preserve });
+  renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2)); renderer.setSize(w, h);
+  scene.add(new THREE.HemisphereLight(0xffffff, 0xb7c3d1, 0.35));
+  const dl = new THREE.DirectionalLight(0xffffff, 1.6); dl.position.set(60, 90, 50); scene.add(dl);
+  applyRealisticLook(scene, renderer, dl);
+  return { scene, camera, renderer };
+}
+let liveCard = null, snapRig = null, snapChain = Promise.resolve();
+const snapCache = new Map();
+function closeLiveCard() {
+  if (!liveCard) return;
+  const l = liveCard; liveCard = null; l.dead = true;
+  try { document.removeEventListener("pointerdown", l.away, true); l.ro.disconnect(); l.controls.dispose(); if (l.model) disposeObject(l.model); l.renderer.dispose(); l.renderer.forceContextLoss(); l.renderer.domElement.remove(); } catch (e) { /* already gone */ }
+}
+async function startLiveCard(host, part) {
+  const w = host.clientWidth || 320, h = host.clientHeight || 230;
+  const { scene, camera, renderer } = newStage(w, h, false);
+  const dom = renderer.domElement; dom.className = "p3d-canvas"; host.appendChild(dom);
+  const controls = new OrbitControls(camera, dom); controls.enableDamping = true; controls.dampingFactor = 0.12;
+  const live = { renderer, controls, model: null, dead: false, until: 0, running: false, active: false };
+  liveCard = live;
+  /* Passive until tapped, so a swipe over the model still scrolls the chat. */
+  controls.enabled = false; dom.style.touchAction = "pan-y";
+  const hint = host.querySelector(".p3d-hint"), done = document.createElement("button");
+  done.type = "button"; done.className = "p3d-done"; done.textContent = "Done"; host.appendChild(done);
+  const setActive = (on) => {
+    live.active = on; controls.enabled = on; dom.style.touchAction = on ? "none" : "pan-y"; host.classList.toggle("active", on);
+    if (hint) hint.textContent = on ? "Drag to rotate · pinch or scroll to zoom" : "Tap the model to rotate it · tap a value to change it";
+  };
+  host.addEventListener("click", (e) => { if (e.target.closest(".p3d-done")) setActive(false); else if (!live.active) setActive(true); });
+  live.away = (e) => { if (live.active && !host.contains(e.target)) setActive(false); };
+  document.addEventListener("pointerdown", live.away, true);
+  const frame = () => {
+    if (live.dead) return;
+    controls.update(); renderer.render(scene, camera);
+    if (performance.now() < live.until) requestAnimationFrame(frame); else live.running = false;
+  };
+  const kick = (ms) => { live.until = Math.max(live.until, performance.now() + ms); if (!live.running && !live.dead) { live.running = true; requestAnimationFrame(frame); } };
+  controls.addEventListener("start", () => kick(600)); controls.addEventListener("change", () => kick(500));
+  live.ro = new ResizeObserver(() => { const nw = host.clientWidth, nh = host.clientHeight; if (nw && nh) { renderer.setSize(nw, nh); camera.aspect = nw / nh; camera.updateProjectionMatrix(); kick(300); } });
+  live.ro.observe(host);
+  try {
+    const obj = await partModel(part);
+    if (live.dead) { disposeObject(obj); return; }
+    const { wrap, midY, size } = fitModel(obj);
+    scene.add(wrap); live.model = wrap;
+    camera.position.set(95, 80 + midY, 95); controls.target.set(0, midY, 0); controls.update();
+    host.classList.add("ready"); host.querySelectorAll("svg").forEach((n) => n.remove());
+    const tag = document.createElement("span"); tag.className = "p3d-dim"; tag.textContent = sizeLabel(size); host.appendChild(tag);
+    kick(1500);
+  } catch (e) { host.classList.add("failed"); }
+}
+function snapshotOf(part) {
+  const key = part.id + ":" + (part.jobId || part.demoKind || "");
+  if (snapCache.has(key)) return Promise.resolve(snapCache.get(key));
+  snapChain = snapChain.then(async () => {
+    if (!snapRig) snapRig = newStage(480, 300, true);
+    const { scene, camera, renderer } = snapRig;
+    const obj = await partModel(part), { wrap, midY } = fitModel(obj);
+    scene.add(wrap); camera.position.set(95, 80 + midY, 95); camera.lookAt(0, midY, 0);
+    renderer.render(scene, camera); const url = renderer.domElement.toDataURL("image/png");
+    scene.remove(wrap); disposeObject(wrap); snapCache.set(key, url); return url;
+  }).catch(() => null);
+  return snapChain;
+}
+function mountCardViewers(c) {
+  closeLiveCard();
+  document.querySelectorAll("#threadInner .part-3d").forEach((host) => {
+    const part = partOf(c, host.dataset["3d"]); if (!part) return;
+    try {
+      if (host.classList.contains("live")) startLiveCard(host, part).catch(() => host.classList.add("failed"));
+      else snapshotOf(part).then((url) => { if (url && host.isConnected) { host.innerHTML = `<img src="${url}" alt="${esc(part.title)}">`; host.classList.add("ready"); } });
+    } catch (e) { host.classList.add("failed"); }
+  });
+}
+
+/* Change a value by hand: the new number goes in as a normal message, so the version history and the checks stay as they are. */
+function editPhrase(key, v) {
+  const k = key.replace(/_mm$/, ""), mm = /_mm$/.test(key) ? " mm" : "";
+  if (/^thickness/.test(k)) return `Make it ${v} mm thick`;
+  if (/^width/.test(k)) return `Make it ${v} mm wide`;
+  if (/^height/.test(k)) return `Make it ${v} mm tall`;
+  if (/^length/.test(k)) return `Make it ${v} mm long`;
+  if (/^depth/.test(k)) return `Make it ${v} mm deep`;
+  if (/hole_count$/.test(k)) return `${v} holes`;
+  if (/^teeth/.test(k)) return `${v} teeth`;
+  if (/^fillet/.test(k)) return `Use ${v} mm fillets`;
+  if (/bore/.test(k)) return `Make the bore ${v} mm`;
+  if (/diameter/.test(k)) return `Make the diameter ${v} mm`;
+  return `Set ${k.replace(/_/g, " ")} to ${v}${mm}`;
+}
+/* The rules-only Engine plan reads fixed phrases. Everything else needs a plan that reads any wording. */
+const ENGINE_READABLE = /^(thickness|width|height|length|depth|teeth|fillet|diameter)|hole_count$|bore/;
+const onEngine = () => String(S.model || "").startsWith("engine");
+function editChip(chip) {
+  if (chip.querySelector("input") || S.busy) return;
+  const key = chip.dataset.editParam, old = chip.dataset.val, prev = chip.innerHTML;
+  if (onEngine() && !ENGINE_READABLE.test(key.replace(/_mm$/, ""))) { toast("Switch to Basic or higher to change this value."); return; }
+  const input = document.createElement("input");
+  input.type = "number"; input.step = "any"; input.inputMode = "decimal"; input.value = old; input.className = "chip-input"; input.setAttribute("aria-label", "New value for " + key);
+  chip.textContent = key.replace(/_mm$/, "").replace(/_/g, " ") + " "; chip.appendChild(input); input.focus(); input.select();
+  let done = false;
+  const finish = (go) => {
+    if (done) return; done = true;
+    const v = input.value.trim();
+    if (go && v !== "" && Number(v) > 0 && Number(v) !== Number(old)) send(editPhrase(key, Number(v)));
+    else chip.innerHTML = prev;
+  };
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); finish(true); } else if (e.key === "Escape") finish(false); });
+  input.addEventListener("blur", () => finish(true));
 }
 /* What the last edit changed, measured on the build. Rows the server marks worse are highlighted. */
 function diffHtml(d) {
@@ -1154,6 +1302,7 @@ $("chatList").addEventListener("click", async (e) => {
 });
 $("threadInner").addEventListener("click", async (e) => {
   const say = e.target.closest("[data-say]"); if (say) { send(say.dataset.say); return; }
+  const ec = e.target.closest("[data-edit-param]"); if (ec) { editChip(ec); return; }
   const rt = e.target.closest("[data-retry]");
   if (rt) {
     const c = chat(), i = c ? c.messages.findIndex((m) => m.id === rt.dataset.retry) : -1;
