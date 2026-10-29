@@ -867,9 +867,10 @@ function scrollEnd(smooth) { const t = $("thread"); t.scrollTo({ top: t.scrollHe
 
 /* working indicator */
 let workTimer = 0;
-function showWorking() {
+function showWorking(steps, waitText) {
   const inner = $("threadInner");
-  const steps = ["Reading your request", "Checking the dimensions", "Building the solid", "Preparing the preview"];
+  steps = steps || ["Reading your request", "Checking the dimensions", "Building the solid", "Preparing the preview"];
+  waitText = waitText || "Still building. Detailed parts can take a minute or two.";
   const el = document.createElement("div"); el.className = "msg"; el.id = "working";
   el.innerHTML = ASSIST_AVA + '<div class="reply"><div class="working">' + steps.map((s, i) => `<div class="work-row ${i === 0 ? "live" : ""}" data-i="${i}"><span class="tick"></span><span>${s}</span></div>`).join("") + "</div></div>";
   inner.appendChild(el); scrollEnd(true);
@@ -882,7 +883,7 @@ function showWorking() {
     else {
       clearInterval(workTimer);
       const more = document.createElement("div"); more.className = "work-row live";
-      more.innerHTML = '<span class="tick"></span><span>Still building. Detailed parts can take a minute or two.</span>';
+      more.innerHTML = '<span class="tick"></span><span>' + esc(waitText) + '</span>';
       el.querySelector(".working").appendChild(more);
       setTimeout(() => { if (more.isConnected) more.lastChild.textContent = "This one is taking longer than usual. You can keep waiting."; }, 60000);
     }
@@ -1203,9 +1204,6 @@ function fileCardFromServer(file, r) {
   }
   if (a.text_excerpt) card.text = a.text_excerpt;
   if (a.numbers_found) card.numbers = a.numbers_found;
-  // Flat shapes (DXF, SVG, traced pictures) have no bounding box block, so their rows come from the server's own card.
-  if (!card.rows.length && r.card && Array.isArray(r.card.rows)) card.rows = r.card.rows.filter((x) => Array.isArray(x) && x.length === 2);
-  if (r.card && typeof r.card.preview_svg === "string" && r.card.preview_svg.startsWith("<svg")) card.previewSvg = r.card.preview_svg;
   return card;
 }
 function fileCardHtml(m) {
@@ -1213,7 +1211,6 @@ function fileCardHtml(m) {
   if (k.error) return `<div class="filecard"><div class="fc-head"><b>${esc(k.name)}</b></div><div class="fc-warn">${esc(k.error)}</div></div>`;
   let h = `<div class="filecard"><div class="fc-head"><b>${esc(k.name)}</b><span class="fc-kind">${esc(String(k.kind).toUpperCase())}</span></div><div class="fc-sub">${esc(k.size)}${k.local ? " · opened in your browser, not uploaded" : ""}</div>`;
   if (k.summary) h += `<div>${esc(k.summary)}</div>`;
-  if (k.previewSvg) h += `<img class="fc-trace" alt="The outline traced from your picture" src="data:image/svg+xml;charset=utf-8,${encodeURIComponent(k.previewSvg)}">`;
   if (k.rows.length) h += "<dl>" + k.rows.map(([a, b]) => `<dt>${esc(a)}</dt><dd>${esc(b)}</dd>`).join("") + "</dl>";
   if (k.dims.length) h += '<div class="fc-h">Dimensions read from the file</div><ul>' + k.dims.map((d) => `<li>${esc(d.label)}: ${d.value_mm == null ? "not readable" : esc(num2(d.value_mm)) + " mm"}${d.raw ? ` <span class="fc-sub">(${esc(d.raw)})</span>` : ""}<span class="conf ${esc(d.confidence)}">${esc(d.confidence)}</span></li>`).join("") + "</ul>";
   if (k.features.length) h += '<div class="fc-h">Features</div><ul>' + k.features.map((f) => `<li>${esc(f)}</li>`).join("") + "</ul>";
