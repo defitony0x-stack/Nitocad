@@ -507,7 +507,7 @@ const ASSIST_AVA = '<div class="ava"><img src="logo-mark.png" alt=""></div>';
 function partCardHtml(c, part, isLatest, isNewest) {
   const vers = versionsOf(c, part), v = vers.findIndex((p) => p.id === part.id) + 1;
   const editable = !!isNewest && part.partType !== "assembly";
-  const chips = part.partType === "assembly" ? assemblyChips(part) : Object.entries(part.params).slice(0, 4).map(([k, val]) => {
+  const chips = part.partType === "assembly" ? assemblyChips(part) : buildingChips(part, !!isNewest) || Object.entries(part.params).slice(0, 4).map(([k, val]) => {
     const label = `${esc(k.replace(/_mm$/, "").replace(/_/g, " "))} ${esc(val)}${/_mm$/.test(k) ? " mm" : ""}`;
     return editable && typeof val === "number" ? `<span class="spec-chip editable" role="button" tabindex="0" data-edit-param="${esc(k)}" data-val="${esc(val)}" title="Tap to change">${label}</span>` : `<span class="spec-chip">${label}</span>`;
   }).join("");
@@ -521,7 +521,25 @@ function partCardHtml(c, part, isLatest, isNewest) {
       : `<button class="btn btn-primary btn-sm" data-generate="${part.id}">Generate files · ${part.generateCredits || 10} credits</button><span class="preview-tag">Free preview</span>`) + `</div></div>` +
     (isLatest ? followupsHtml(part) : "");
 }
+/* A building's card leads with floors, roof and footprint. Tapping the roof switches it between gable and flat. */
+function buildingChips(part, live) {
+  if (part.partType !== "building") return null;
+  const p = part.params, roof = String(p.roof_type || "gable"), out = [];
+  const num = (k, label, unit) => p[k] == null ? "" : (live && typeof p[k] === "number"
+    ? `<span class="spec-chip editable" role="button" tabindex="0" data-edit-param="${k}" data-val="${esc(p[k])}" title="Tap to change">${label} ${esc(p[k])}${unit}</span>`
+    : `<span class="spec-chip">${label} ${esc(p[k])}${unit}</span>`);
+  out.push(num("floors", "floors", ""));
+  out.push(live ? `<span class="spec-chip editable" role="button" tabindex="0" data-say="${roof === "flat" ? "Use a gable roof at 30 degrees" : "Use a flat roof"}" title="Tap to switch roof">roof ${esc(roof)}</span>` : `<span class="spec-chip">roof ${esc(roof)}</span>`);
+  if (roof === "gable") out.push(num("roof_pitch_deg", "pitch", "°"));
+  out.push(num("width_mm", "width", " mm"), num("depth_mm", "depth", " mm"));
+  return out.filter(Boolean).join("");
+}
 function followupsHtml(part) {
+  if (part.partType === "building") {
+    const roof = String(part.params.roof_type || "gable"), floors = Number(part.params.floors) || 1;
+    const set = [roof === "flat" ? "Use a gable roof at 30 degrees" : "Use a flat roof", floors < 4 ? `Make it ${floors + 1} floors` : "Make it 2 floors", roof === "gable" ? "Make the roof steeper, 35 degrees" : "Add a study"];
+    return '<div class="followups">' + set.map((t) => `<button class="chip" data-say="${esc(t)}">${esc(t)}</button>`).join("") + "</div>";
+  }
   const k = kindOf(part);
   const set = { assembly: ["Make the base plate thicker", "Add another part on top", "Move the second part to the edge"], gear: ["Add 4 lightening holes", "Make the bore 8 mm", "Use 30 teeth"], shaft: ["Add a keyway", "Make it 150 mm long", "Add a 2 mm chamfer"], box: ["Add 4 corner screw posts", "Make the walls 4 mm", "Add a vent slot"], bracket: ["Make it thicker", "Add 2 more holes", "Use 8 mm fillets"] }[k];
   return '<div class="followups">' + set.map((t) => `<button class="chip" data-say="${esc(t)}">${esc(t)}</button>`).join("") + "</div>";
@@ -724,6 +742,8 @@ function editPhrase(key, v) {
   if (/hole_count$/.test(k)) return `${v} holes`;
   if (/^teeth/.test(k)) return `${v} teeth`;
   if (/^fillet/.test(k)) return `Use ${v} mm fillets`;
+  if (/^floors$/.test(k)) return `Make it ${v} floors`;
+  if (/pitch/.test(k)) return `Make the roof pitch ${v} degrees`;
   if (/bore/.test(k)) return `Make the bore ${v} mm`;
   if (/diameter/.test(k)) return `Make the diameter ${v} mm`;
   return `Set ${k.replace(/_/g, " ")} to ${v}${mm}`;
