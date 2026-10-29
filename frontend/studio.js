@@ -8,7 +8,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { STLLoader } from "three/addons/loaders/STLLoader.js";
-import { analyzeMesh, describeFace, describePair, fmtLen } from "./mesh-measure.js";
+import { analyzeMesh, describeFace, describePair, fmtLen, splitIslands } from "./mesh-measure.js";
 import { applyRealisticLook, prepareStlGeometry, buildPartObject, materialFor, setWireframe, disposeObject } from "./viewer-look.js";
 
 const Auth = window.NitoAuth;
@@ -396,6 +396,8 @@ function viewerInit() {
   const el = $("cvStage");
   V.scene = new THREE.Scene(); V.scene.background = new THREE.Color(0xEDF2F4);
   V.camera = new THREE.PerspectiveCamera(40, 1, 0.1, 2000);
+  V.persp = V.camera; V.ortho = new THREE.OrthographicCamera(-50, 50, 50, -50, 0.1, 2000);
+  V.plane = new THREE.Plane(new THREE.Vector3(0, -1, 0), 0);
   V.renderer = new THREE.WebGLRenderer({ antialias: true });
   V.renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
   el.insertBefore(V.renderer.domElement, el.firstChild);
@@ -413,13 +415,85 @@ function viewerFit() {
   if (!V.ready) return;
   const el = $("cvStage"), w = el.clientWidth, h = el.clientHeight;
   if (!w || !h) return;
-  V.renderer.setSize(w, h); V.camera.aspect = w / h; V.camera.updateProjectionMatrix();
+  V.renderer.setSize(w, h); V.persp.aspect = w / h; V.persp.updateProjectionMatrix();
+  const half = V.orthoHalf || 50, a = w / h;
+  Object.assign(V.ortho, { left: -half * a, right: half * a, top: half, bottom: -half }); V.ortho.updateProjectionMatrix();
 }
 function viewerLoop() { if (!V.running) return; requestAnimationFrame(viewerLoop); V.controls.update(); V.renderer.render(V.scene, V.camera); }
 function viewerReset() {
   if (!V.ready) return;
   const y = V.mesh ? V.mesh.userData.midY || 0 : 0;
-  V.camera.position.set(95, 80 + y, 95); V.controls.target.set(0, y, 0); V.controls.update();
+  V.camera.position.set(95, 80 + y, 95); V.controls.target.set(0, y, 0);
+  if (V.camera === V.ortho) { V.ortho.zoom = 1; V.orthoHalf = V.camera.position.distanceTo(V.controls.target) * Math.tan(THREE.MathUtils.degToRad(V.persp.fov / 2)); viewerFit(); V.ortho.updateProjectionMatrix(); }
+  V.controls.update();
+}
+/* ---- inspect tools: orthographic view, section cut, explode ---- */
+const SEC = { on: false, axis: "y", t: 0.5, flip: false };
+function setOrtho(on) {
+  if (!V.ready || on === (V.camera === V.ortho)) return;
+  const from = V.camera, tgt = V.controls.target, half = Math.tan(THREE.MathUtils.degToRad(V.persp.fov / 2));
+  const to = on ? V.ortho : V.persp;
+  if (on) { V.orthoHalf = from.position.distanceTo(tgt) * half; V.ortho.zoom = 1; to.position.copy(from.position); }
+  else { const dir = from.position.clone().sub(tgt).normalize(); to.position.copy(tgt).addScaledVector(dir, V.orthoHalf / (V.ortho.zoom * half)); }
+  to.quaternion.copy(from.quaternion);
+  V.camera = to; V.controls.object = to; viewerFit(); to.updateProjectionMatrix(); V.controls.update();
+}
+function setSides(double) {
+  if (!V.mesh) return;
+  V.mesh.traverse((o) => { if (o.isMesh && o.material) { o.material.side = double ? THREE.DoubleSide : THREE.FrontSide; o.material.needsUpdate = true; } });
+}
+function applySection() {
+  if (!V.ready) return;
+  if (!SEC.on || !V.bounds) { V.renderer.clippingPlanes = []; setSides(false); return; }
+  const i = { x: 0, y: 1, z: 2 }[SEC.axis], lo = V.bounds.min.getComponent(i), hi = V.bounds.max.getComponent(i), s = lo + SEC.t * (hi - lo);
+  const n = new THREE.Vector3(); n.setComponent(i, SEC.flip ? 1 : -1);
+  V.plane.normal.copy(n); V.plane.constant = SEC.flip ? -s : s;     // keeps the side where normal . point + constant >= 0
+  V.renderer.clippingPlanes = [V.plane]; setSides(true);
+}
+/* Pull the model apart into its separate solids. The preview mesh is one object, so the solids are found by which triangles touch. */
+function explodeSetup() {
+  if (V.islands !== undefined) return V.islands;
+  V.islands = null;
+  let base = null; if (V.mesh) V.mesh.traverse((o) => { if (o.isMesh && !base) base = o; });
+  if (!base) return null;
+  const geo = base.geometry.index ? base.geometry.toNonIndexed() : base.geometry;
+  const pos = geo.attributes.position.array, nor = geo.attributes.normal ? geo.attributes.normal.array : null;
+  const { islands, bounds, diag } = splitIslands(pos, null);
+  if (islands.length < 2) return null;
+  const centre = [0, 1, 2].map((a) => (bounds.lo[a] + bounds.hi[a]) / 2), group = new THREE.Group(), parts = [];
+  islands.forEach((isl, n) => {
+    const p = new Float32Array(isl.tris.length * 9), q = nor ? new Float32Array(isl.tris.length * 9) : null;
+    isl.tris.forEach((t, i) => { p.set(pos.subarray(9 * t, 9 * t + 9), 9 * i); if (q) q.set(nor.subarray(9 * t, 9 * t + 9), 9 * i); });
+    const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.BufferAttribute(p, 3));
+    if (q) g.setAttribute("normal", new THREE.BufferAttribute(q, 3)); else g.computeVertexNormals();
+    const part = new THREE.Group(), m = new THREE.Mesh(g, base.material); m.castShadow = true; part.add(m);
+    part.add(new THREE.LineSegments(new THREE.EdgesGeometry(g, 30), new THREE.LineBasicMaterial({ color: 0x1f2630, transparent: true, opacity: 0.5 })));
+    group.add(part);
+    let d = [isl.mid[0] - centre[0], isl.mid[1] - centre[1], isl.mid[2] - centre[2]]; const L = Math.hypot(d[0], d[1], d[2]);
+    if (L < diag * 0.02) d = n === 0 ? [0, 0, 0] : [0, n % 2 ? -1 : 1, 0];   // parts sharing a centre (a gear on its shaft) separate along the height
+    else d = d.map((v) => v / L);
+    parts.push({ part, d });
+  });
+  base.parent.add(group);
+  V.islands = { group, parts, diag, root: base.parent };
+  return V.islands;
+}
+function explodeApply(t) {
+  const e = V.islands; if (!e) return;
+  e.root.children.forEach((ch) => { ch.visible = ch === e.group ? t > 0 : t === 0; });
+  for (const { part, d } of e.parts) part.position.set(d[0] * t * e.diag * 0.7, d[1] * t * e.diag * 0.7, d[2] * t * e.diag * 0.7);
+  applyWire();
+}
+function sheetSync() {
+  const sheet = $("cvSheet"); sheet.hidden = !(SEC.on || V.exp);
+  sheet.querySelector('[data-row="section"]').hidden = !SEC.on; sheet.querySelector('[data-row="explode"]').hidden = !V.exp;
+}
+function resetInspect() {
+  SEC.on = false; SEC.flip = false; SEC.t = 0.5; V.exp = false;
+  $("secT").value = 50; $("expT").value = 40;
+  ["tSection", "tExplode"].forEach((id) => $(id).setAttribute("aria-pressed", "false"));
+  if (V.ready) V.renderer.clippingPlanes = [];
+  sheetSync();
 }
 function viewerStatus(msg, loading) {
   const stage = $("cvStage"); let el = stage.querySelector(".cv-load");
@@ -439,6 +513,7 @@ function viewerPlace(obj) {
   wrap.position.set(-c.x, -b1.min.y, -c.z);
   wrap.userData.midY = (b1.max.y - b1.min.y) / 2;
   V.mesh = wrap; V.scene.add(wrap); applyWire(); viewerReset(); viewerStatus("");
+  V.bounds = new THREE.Box3().setFromObject(wrap); V.islands = undefined; resetInspect();
   const d = $("cvDim"); d.hidden = false; const big = Math.max(size.x, size.y, size.z) >= 3000;   /* civil parts read better in metres */
   const fmt = (v) => big ? (v / 1000).toFixed(2) : v.toFixed(1);
   d.textContent = `${fmt(size.x)} x ${fmt(size.z)} x ${fmt(size.y)} ${big ? "m" : "mm"}`;
@@ -824,7 +899,9 @@ function renderCanvas() {
     const vers = versionsOf(c, part);
     sel.hidden = vers.length < 2;
     sel.innerHTML = vers.map((p, i) => `<option value="${p.id}"${p.id === part.id ? " selected" : ""}>v${i + 1}</option>`).join("");
-  } else sel.hidden = true;
+    $("cvPrev").hidden = $("cvNext").hidden = sel.hidden;
+    $("cvPrev").disabled = sel.selectedIndex <= 0; $("cvNext").disabled = sel.selectedIndex >= vers.length - 1;
+  } else { sel.hidden = true; $("cvPrev").hidden = $("cvNext").hidden = true; }
   document.querySelectorAll(".tab").forEach((t) => t.setAttribute("aria-selected", t.dataset.tab === S.tab ? "true" : "false"));
   const panel = $("panel");
   if (!part) { panel.innerHTML = '<div class="chat-empty">Build a part to see its specs, files and on-chain record here.</div>'; return; }
@@ -1354,6 +1431,26 @@ $("newChat").addEventListener("click", () => { S.activeId = null; S.activePartId
 $("signOut").addEventListener("click", async () => { await Auth.signOut(); if (DEMO) location.href = "studio.html"; else route(); });
 $("tReset").addEventListener("click", viewerReset);
 $("tWire").addEventListener("click", (e) => { V.wire = !V.wire; e.currentTarget.setAttribute("aria-pressed", V.wire); applyWire(); });
+$("tOrtho").addEventListener("click", (e) => { const on = V.camera !== V.ortho; setOrtho(on); e.currentTarget.setAttribute("aria-pressed", String(on)); });
+$("tSection").addEventListener("click", (e) => {
+  if (!V.mesh) return; SEC.on = !SEC.on; e.currentTarget.setAttribute("aria-pressed", String(SEC.on)); applySection(); sheetSync();
+});
+$("tExplode").addEventListener("click", (e) => {
+  if (!V.mesh) return;
+  if (!V.exp) {
+    if (!explodeSetup()) { toast("This part is one solid, so there is nothing to pull apart."); return; }
+    V.exp = true; explodeApply($("expT").value / 100);
+  } else { V.exp = false; explodeApply(0); }
+  e.currentTarget.setAttribute("aria-pressed", String(V.exp)); sheetSync();
+});
+document.querySelectorAll("#cvSheet [data-axis]").forEach((b) => b.addEventListener("click", () => {
+  SEC.axis = b.dataset.axis; document.querySelectorAll("#cvSheet [data-axis]").forEach((x) => x.setAttribute("aria-pressed", String(x === b))); applySection();
+}));
+$("secT").addEventListener("input", (e) => { SEC.t = e.target.value / 100; applySection(); });
+$("secFlip").addEventListener("click", () => { SEC.flip = !SEC.flip; applySection(); });
+$("expT").addEventListener("input", (e) => { if (V.exp) explodeApply(e.target.value / 100); });
+function stepVersion(d) { const sel = $("cvVersion"), i = sel.selectedIndex + d; if (i < 0 || i >= sel.options.length) return; sel.selectedIndex = i; sel.dispatchEvent(new Event("change")); }
+$("cvPrev").addEventListener("click", () => stepVersion(-1)); $("cvNext").addEventListener("click", () => stepVersion(1));
 $("tGrid").addEventListener("click", (e) => { V.grid = !V.grid; e.currentTarget.setAttribute("aria-pressed", V.grid); if (V.gridObj) V.gridObj.visible = V.grid; });
 $("cvVersion").addEventListener("change", (e) => { S.activePartId = e.target.value; renderCanvas(); viewerShow(partOf(chat(), S.activePartId)); });
 document.querySelector(".tabs").addEventListener("click", (e) => { const t = e.target.closest(".tab"); if (!t) return; S.tab = t.dataset.tab; renderCanvas(); });

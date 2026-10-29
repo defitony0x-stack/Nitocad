@@ -305,3 +305,38 @@ export function describePair(a, b) {
   }
   return { title: "Between the two faces", lines: [`Centre to centre ${fmtLen(len(sub(a.centroid, b.centroid)))}`] };
 }
+
+/** Separate solids in one mesh. Triangles that share a corner belong to the same solid, so a compound of
+    parts that do not share vertices (a gear on a shaft) comes apart into its parts. Used to pull an assembly apart. */
+export function splitIslands(positions, index) {
+  const vertCount = positions.length / 3;
+  const triCount = index ? index.length / 3 : Math.floor(vertCount / 3);
+  let lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+  for (let i = 0; i < vertCount; i++) for (let k = 0; k < 3; k++) { const v = positions[3 * i + k]; if (v < lo[k]) lo[k] = v; if (v > hi[k]) hi[k] = v; }
+  const diag = Math.hypot(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]) || 1;
+  const eps = Math.max(1e-6, diag * 1e-6);
+  const weld = new Map(); let next = 0;
+  const idOf = (i) => {
+    const key = Math.round(positions[3 * i] / eps) + "," + Math.round(positions[3 * i + 1] / eps) + "," + Math.round(positions[3 * i + 2] / eps);
+    let id = weld.get(key); if (id === undefined) { id = next++; weld.set(key, id); } return id;
+  };
+  const tv = new Int32Array(triCount * 3);
+  for (let t = 0; t < triCount; t++) for (let k = 0; k < 3; k++) tv[3 * t + k] = idOf(index ? index[3 * t + k] : 3 * t + k);
+  const parent = new Int32Array(next); for (let i = 0; i < next; i++) parent[i] = i;
+  const find = (x) => { while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; } return x; };
+  for (let t = 0; t < triCount; t++) { const a = find(tv[3 * t]), b = find(tv[3 * t + 1]), c = find(tv[3 * t + 2]); parent[b] = a; parent[find(c)] = a; }
+  const byRoot = new Map();
+  for (let t = 0; t < triCount; t++) { const r = find(tv[3 * t]); if (!byRoot.has(r)) byRoot.set(r, []); byRoot.get(r).push(t); }
+  const islands = [];
+  for (const tris of byRoot.values()) {
+    const c = [0, 0, 0], l = [Infinity, Infinity, Infinity], h = [-Infinity, -Infinity, -Infinity];
+    for (const t of tris) for (let k = 0; k < 3; k++) {
+      const i = index ? index[3 * t + k] : 3 * t + k;
+      for (let a = 0; a < 3; a++) { const v = positions[3 * i + a]; c[a] += v; if (v < l[a]) l[a] = v; if (v > h[a]) h[a] = v; }
+    }
+    const n = tris.length * 3;
+    islands.push({ tris, centroid: [c[0] / n, (c[1] / n), c[2] / n], lo: l, hi: h, mid: [(l[0] + h[0]) / 2, (l[1] + h[1]) / 2, (l[2] + h[2]) / 2] });
+  }
+  islands.sort((a, b) => b.tris.length - a.tris.length);
+  return { islands, bounds: { lo, hi }, diag };
+}
