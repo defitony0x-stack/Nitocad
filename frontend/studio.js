@@ -1,14 +1,13 @@
 /* NitoCAD Studio: front end only.
    Preview first, pay when you generate: every message builds a free preview, and a part's full
    files (STEP, IGES, DXF, PDF) unlock when the person presses Generate, which spends credits.
-   The price depends on the AI tier that planned the version, and there is no daily message limit.
+   The price depends on the AI tier that planned the version, and each tier has a daily allowance of messages.
    All backend calls go through the `Backend` object near the top. When the chat backend
    changes, replace `Backend.send` and `Backend.anchor` and leave the rest alone.
    Add ?demo=1 to the URL to explore the interface with sample parts and no sign-in. */
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { STLLoader } from "three/addons/loaders/STLLoader.js";
-import { analyzeMesh, describeFace, describePair, fmtLen, splitIslands } from "./mesh-measure.js";
 import { applyRealisticLook, prepareStlGeometry, buildPartObject, materialFor, setWireframe, disposeObject } from "./viewer-look.js";
 
 const Auth = window.NitoAuth;
@@ -396,8 +395,6 @@ function viewerInit() {
   const el = $("cvStage");
   V.scene = new THREE.Scene(); V.scene.background = new THREE.Color(0xEDF2F4);
   V.camera = new THREE.PerspectiveCamera(40, 1, 0.1, 2000);
-  V.persp = V.camera; V.ortho = new THREE.OrthographicCamera(-50, 50, 50, -50, 0.1, 2000);
-  V.plane = new THREE.Plane(new THREE.Vector3(0, -1, 0), 0);
   V.renderer = new THREE.WebGLRenderer({ antialias: true });
   V.renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
   el.insertBefore(V.renderer.domElement, el.firstChild);
@@ -415,85 +412,13 @@ function viewerFit() {
   if (!V.ready) return;
   const el = $("cvStage"), w = el.clientWidth, h = el.clientHeight;
   if (!w || !h) return;
-  V.renderer.setSize(w, h); V.persp.aspect = w / h; V.persp.updateProjectionMatrix();
-  const half = V.orthoHalf || 50, a = w / h;
-  Object.assign(V.ortho, { left: -half * a, right: half * a, top: half, bottom: -half }); V.ortho.updateProjectionMatrix();
+  V.renderer.setSize(w, h); V.camera.aspect = w / h; V.camera.updateProjectionMatrix();
 }
 function viewerLoop() { if (!V.running) return; requestAnimationFrame(viewerLoop); V.controls.update(); V.renderer.render(V.scene, V.camera); }
 function viewerReset() {
   if (!V.ready) return;
   const y = V.mesh ? V.mesh.userData.midY || 0 : 0;
-  V.camera.position.set(95, 80 + y, 95); V.controls.target.set(0, y, 0);
-  if (V.camera === V.ortho) { V.ortho.zoom = 1; V.orthoHalf = V.camera.position.distanceTo(V.controls.target) * Math.tan(THREE.MathUtils.degToRad(V.persp.fov / 2)); viewerFit(); V.ortho.updateProjectionMatrix(); }
-  V.controls.update();
-}
-/* ---- inspect tools: orthographic view, section cut, explode ---- */
-const SEC = { on: false, axis: "y", t: 0.5, flip: false };
-function setOrtho(on) {
-  if (!V.ready || on === (V.camera === V.ortho)) return;
-  const from = V.camera, tgt = V.controls.target, half = Math.tan(THREE.MathUtils.degToRad(V.persp.fov / 2));
-  const to = on ? V.ortho : V.persp;
-  if (on) { V.orthoHalf = from.position.distanceTo(tgt) * half; V.ortho.zoom = 1; to.position.copy(from.position); }
-  else { const dir = from.position.clone().sub(tgt).normalize(); to.position.copy(tgt).addScaledVector(dir, V.orthoHalf / (V.ortho.zoom * half)); }
-  to.quaternion.copy(from.quaternion);
-  V.camera = to; V.controls.object = to; viewerFit(); to.updateProjectionMatrix(); V.controls.update();
-}
-function setSides(double) {
-  if (!V.mesh) return;
-  V.mesh.traverse((o) => { if (o.isMesh && o.material) { o.material.side = double ? THREE.DoubleSide : THREE.FrontSide; o.material.needsUpdate = true; } });
-}
-function applySection() {
-  if (!V.ready) return;
-  if (!SEC.on || !V.bounds) { V.renderer.clippingPlanes = []; setSides(false); return; }
-  const i = { x: 0, y: 1, z: 2 }[SEC.axis], lo = V.bounds.min.getComponent(i), hi = V.bounds.max.getComponent(i), s = lo + SEC.t * (hi - lo);
-  const n = new THREE.Vector3(); n.setComponent(i, SEC.flip ? 1 : -1);
-  V.plane.normal.copy(n); V.plane.constant = SEC.flip ? -s : s;     // keeps the side where normal . point + constant >= 0
-  V.renderer.clippingPlanes = [V.plane]; setSides(true);
-}
-/* Pull the model apart into its separate solids. The preview mesh is one object, so the solids are found by which triangles touch. */
-function explodeSetup() {
-  if (V.islands !== undefined) return V.islands;
-  V.islands = null;
-  let base = null; if (V.mesh) V.mesh.traverse((o) => { if (o.isMesh && !base) base = o; });
-  if (!base) return null;
-  const geo = base.geometry.index ? base.geometry.toNonIndexed() : base.geometry;
-  const pos = geo.attributes.position.array, nor = geo.attributes.normal ? geo.attributes.normal.array : null;
-  const { islands, bounds, diag } = splitIslands(pos, null);
-  if (islands.length < 2) return null;
-  const centre = [0, 1, 2].map((a) => (bounds.lo[a] + bounds.hi[a]) / 2), group = new THREE.Group(), parts = [];
-  islands.forEach((isl, n) => {
-    const p = new Float32Array(isl.tris.length * 9), q = nor ? new Float32Array(isl.tris.length * 9) : null;
-    isl.tris.forEach((t, i) => { p.set(pos.subarray(9 * t, 9 * t + 9), 9 * i); if (q) q.set(nor.subarray(9 * t, 9 * t + 9), 9 * i); });
-    const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.BufferAttribute(p, 3));
-    if (q) g.setAttribute("normal", new THREE.BufferAttribute(q, 3)); else g.computeVertexNormals();
-    const part = new THREE.Group(), m = new THREE.Mesh(g, base.material); m.castShadow = true; part.add(m);
-    part.add(new THREE.LineSegments(new THREE.EdgesGeometry(g, 30), new THREE.LineBasicMaterial({ color: 0x1f2630, transparent: true, opacity: 0.5 })));
-    group.add(part);
-    let d = [isl.mid[0] - centre[0], isl.mid[1] - centre[1], isl.mid[2] - centre[2]]; const L = Math.hypot(d[0], d[1], d[2]);
-    if (L < diag * 0.02) d = n === 0 ? [0, 0, 0] : [0, n % 2 ? -1 : 1, 0];   // parts sharing a centre (a gear on its shaft) separate along the height
-    else d = d.map((v) => v / L);
-    parts.push({ part, d });
-  });
-  base.parent.add(group);
-  V.islands = { group, parts, diag, root: base.parent };
-  return V.islands;
-}
-function explodeApply(t) {
-  const e = V.islands; if (!e) return;
-  e.root.children.forEach((ch) => { ch.visible = ch === e.group ? t > 0 : t === 0; });
-  for (const { part, d } of e.parts) part.position.set(d[0] * t * e.diag * 0.7, d[1] * t * e.diag * 0.7, d[2] * t * e.diag * 0.7);
-  applyWire();
-}
-function sheetSync() {
-  const sheet = $("cvSheet"); sheet.hidden = !(SEC.on || V.exp);
-  sheet.querySelector('[data-row="section"]').hidden = !SEC.on; sheet.querySelector('[data-row="explode"]').hidden = !V.exp;
-}
-function resetInspect() {
-  SEC.on = false; SEC.flip = false; SEC.t = 0.5; V.exp = false;
-  $("secT").value = 50; $("expT").value = 40;
-  ["tSection", "tExplode"].forEach((id) => $(id).setAttribute("aria-pressed", "false"));
-  if (V.ready) V.renderer.clippingPlanes = [];
-  sheetSync();
+  V.camera.position.set(95, 80 + y, 95); V.controls.target.set(0, y, 0); V.controls.update();
 }
 function viewerStatus(msg, loading) {
   const stage = $("cvStage"); let el = stage.querySelector(".cv-load");
@@ -513,7 +438,6 @@ function viewerPlace(obj) {
   wrap.position.set(-c.x, -b1.min.y, -c.z);
   wrap.userData.midY = (b1.max.y - b1.min.y) / 2;
   V.mesh = wrap; V.scene.add(wrap); applyWire(); viewerReset(); viewerStatus("");
-  V.bounds = new THREE.Box3().setFromObject(wrap); V.islands = undefined; resetInspect();
   const d = $("cvDim"); d.hidden = false; const big = Math.max(size.x, size.y, size.z) >= 3000;   /* civil parts read better in metres */
   const fmt = (v) => big ? (v / 1000).toFixed(2) : v.toFixed(1);
   d.textContent = `${fmt(size.x)} x ${fmt(size.z)} x ${fmt(size.y)} ${big ? "m" : "mm"}`;
@@ -579,16 +503,12 @@ function kindOf(part) { return part.partType === "assembly" ? "assembly" : part.
 function para(text) { return String(text).split(/\n\n+/).map((t) => "<p>" + esc(t).replace(/`([^`]+)`/g, "<code>$1</code>").replace(/\n/g, "<br>") + "</p>").join(""); }
 const ASSIST_AVA = '<div class="ava"><img src="logo-mark.png" alt=""></div>';
 
-function partCardHtml(c, part, isLatest, isNewest) {
+function partCardHtml(c, part, isLatest) {
   const vers = versionsOf(c, part), v = vers.findIndex((p) => p.id === part.id) + 1;
-  const editable = !!isNewest && part.partType !== "assembly";
-  const chips = part.partType === "assembly" ? assemblyChips(part) : buildingChips(part, !!isNewest) || Object.entries(part.params).slice(0, 4).map(([k, val]) => {
-    const label = `${esc(k.replace(/_mm$/, "").replace(/_/g, " "))} ${esc(val)}${/_mm$/.test(k) ? " mm" : ""}`;
-    return editable && typeof val === "number" ? `<span class="spec-chip editable" role="button" tabindex="0" data-edit-param="${esc(k)}" data-val="${esc(val)}" title="Tap to change">${label}</span>` : `<span class="spec-chip">${label}</span>`;
-  }).join("");
+  const chips = part.partType === "assembly" ? assemblyChips(part) : Object.entries(part.params).slice(0, 4).map(([k, val]) => `<span class="spec-chip">${esc(k.replace(/_mm$/, ""))} ${esc(val)}${/_mm$/.test(k) ? " mm" : ""}</span>`).join("");
   const anchored = part.anchor ? '<span class="ver anchored">anchored</span>' : "";
-  return `<div class="part"><div class="part-3d${isNewest ? " live" : ""}" data-3d="${part.id}">${thumbSvg(kindOf(part))}<span class="p3d-hint">${isNewest ? "Tap the model to rotate it · tap a value to change it" : ""}</span></div>` +
-    `<button class="part-top" data-part="${part.id}" aria-label="Open ${esc(part.title)} in viewer">` +
+  return `<div class="part"><button class="part-top" data-part="${part.id}" aria-label="Open ${esc(part.title)} in viewer">` +
+    `<div class="part-thumb">${thumbSvg(kindOf(part))}</div>` +
     `<div class="part-meta"><div class="part-title">${esc(part.title)} <span class="ver">v${v}</span>${anchored}</div><div class="part-specs">${chips}</div></div>` +
     `<span class="part-open">Open <svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px"><path d="M9 6l6 6-6 6"/></svg></span></button>` +
     `<div class="part-actions">` + (part.paid
@@ -596,25 +516,7 @@ function partCardHtml(c, part, isLatest, isNewest) {
       : `<button class="btn btn-primary btn-sm" data-generate="${part.id}">Generate files · ${part.generateCredits || 10} credits</button><span class="preview-tag">Free preview</span>`) + `</div></div>` +
     (isLatest ? followupsHtml(part) : "");
 }
-/* A building's card leads with floors, roof and footprint. Tapping the roof switches it between gable and flat. */
-function buildingChips(part, live) {
-  if (part.partType !== "building") return null;
-  const p = part.params, roof = String(p.roof_type || "gable"), out = [];
-  const num = (k, label, unit) => p[k] == null ? "" : (live && typeof p[k] === "number"
-    ? `<span class="spec-chip editable" role="button" tabindex="0" data-edit-param="${k}" data-val="${esc(p[k])}" title="Tap to change">${label} ${esc(p[k])}${unit}</span>`
-    : `<span class="spec-chip">${label} ${esc(p[k])}${unit}</span>`);
-  out.push(num("floors", "floors", ""));
-  out.push(live ? `<span class="spec-chip editable" role="button" tabindex="0" data-say="${roof === "flat" ? "Use a gable roof at 30 degrees" : "Use a flat roof"}" title="Tap to switch roof">roof ${esc(roof)}</span>` : `<span class="spec-chip">roof ${esc(roof)}</span>`);
-  if (roof === "gable") out.push(num("roof_pitch_deg", "pitch", "°"));
-  out.push(num("width_mm", "width", " mm"), num("depth_mm", "depth", " mm"));
-  return out.filter(Boolean).join("");
-}
 function followupsHtml(part) {
-  if (part.partType === "building") {
-    const roof = String(part.params.roof_type || "gable"), floors = Number(part.params.floors) || 1;
-    const set = [roof === "flat" ? "Use a gable roof at 30 degrees" : "Use a flat roof", floors < 4 ? `Make it ${floors + 1} floors` : "Make it 2 floors", roof === "gable" ? "Make the roof steeper, 35 degrees" : "Add a study"];
-    return '<div class="followups">' + set.map((t) => `<button class="chip" data-say="${esc(t)}">${esc(t)}</button>`).join("") + "</div>";
-  }
   const k = kindOf(part);
   const set = { assembly: ["Make the base plate thicker", "Add another part on top", "Move the second part to the edge"], gear: ["Add 4 lightening holes", "Make the bore 8 mm", "Use 30 teeth"], shaft: ["Add a keyway", "Make it 150 mm long", "Add a 2 mm chamfer"], box: ["Add 4 corner screw posts", "Make the walls 4 mm", "Add a vent slot"], bracket: ["Make it thicker", "Add 2 more holes", "Use 8 mm fillets"] }[k];
   return '<div class="followups">' + set.map((t) => `<button class="chip" data-say="${esc(t)}">${esc(t)}</button>`).join("") + "</div>";
@@ -622,7 +524,6 @@ function followupsHtml(part) {
 function renderThread(animateLast) {
   const inner = $("threadInner"), c = chat();
   if (!c || !c.messages.length) {
-    closeLiveCard();
     inner.innerHTML = `<div class="hello"><div class="mark"><img src="logo-mark.png" alt=""></div><h1>What are we building?</h1>` +
       `<p>Describe a part in plain words. Then keep talking to change it. Every version stays in this chat.</p>` +
       `<div class="starters">${STARTERS.map(([t, p]) => `<button class="starter" data-say="${esc(p)}"><b>${esc(t)}</b><span>${esc(p)}</span></button>`).join("")}</div></div>`;
@@ -634,214 +535,13 @@ function renderThread(animateLast) {
     if (m.fileCard) return `<div class="msg">${ASSIST_AVA}<div class="reply" data-mid="${m.id}">${fileCardHtml(m)}</div></div>`;
     const part = m.partId ? partOf(c, m.partId) : null;
     let extra = "";
-    if (part) extra = partCardHtml(c, part, latest && latest.id === part.id && m === c.messages[c.messages.length - 1], !!latest && latest.id === part.id);
+    if (part) extra = partCardHtml(c, part, latest && latest.id === part.id && m === c.messages[c.messages.length - 1]);
     if (m.diff) extra = diffHtml(m.diff) + extra;
     if (m.needCredits) extra = needCreditsHtml();
     if (m.choices && m.choices.length && m === c.messages[c.messages.length - 1]) extra += choicesHtml(m.choices);
     if (m.retry && m === c.messages[c.messages.length - 1]) extra += `<div class="followups"><button class="chip" data-retry="${m.id}">Try again</button></div>`;
     return `<div class="msg">${ASSIST_AVA}<div class="reply" data-mid="${m.id}">${para(m.text)}${extra}</div></div>`;
   }).join("");
-  mountCardViewers(c);
-}
-
-/* ============================================================ 3D in the chat */
-/* The newest part in the chat is a live, rotatable model. Older versions show a still picture of the same model.
-   The STL is fetched once per part and parsed fresh for each view, so closing one never breaks another. */
-const stlCache = new Map();
-async function stlBuffer(part) {
-  const key = part.id + ":" + (part.jobId || part.demoKind || "");
-  if (!stlCache.has(key)) stlCache.set(key, fetchStl(part, false).catch((e) => { stlCache.delete(key); throw e; }));
-  return (await stlCache.get(key)).slice(0);
-}
-async function partModel(part) {
-  if (part.demoKind) { await sleep(120); return Demo.geometry(part.demoKind, part.params); }
-  const geo = prepareStlGeometry(new STLLoader().parse(await stlBuffer(part)));
-  geo.center(); geo.rotateX(-Math.PI / 2);
-  return buildPartObject(geo, part.material);
-}
-function fitModel(obj) {
-  const wrap = new THREE.Group(); wrap.add(obj);
-  const b0 = new THREE.Box3().setFromObject(wrap), size = b0.getSize(new THREE.Vector3());
-  wrap.scale.setScalar(70 / (Math.max(size.x, size.y, size.z) || 1));
-  const b1 = new THREE.Box3().setFromObject(wrap), c = b1.getCenter(new THREE.Vector3());
-  wrap.position.set(-c.x, -b1.min.y, -c.z);
-  return { wrap, midY: (b1.max.y - b1.min.y) / 2, size };
-}
-function sizeLabel(size) {
-  const big = Math.max(size.x, size.y, size.z) >= 3000, f = (v) => big ? (v / 1000).toFixed(2) : v.toFixed(1);
-  return `${f(size.x)} x ${f(size.z)} x ${f(size.y)} ${big ? "m" : "mm"}`;
-}
-function newStage(w, h, preserve) {
-  const scene = new THREE.Scene(); scene.background = new THREE.Color(0xEDF2F4);
-  const camera = new THREE.PerspectiveCamera(40, w / h, 0.1, 2000);
-  const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: !!preserve });
-  renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2)); renderer.setSize(w, h);
-  scene.add(new THREE.HemisphereLight(0xffffff, 0xb7c3d1, 0.35));
-  const dl = new THREE.DirectionalLight(0xffffff, 1.6); dl.position.set(60, 90, 50); scene.add(dl);
-  applyRealisticLook(scene, renderer, dl);
-  return { scene, camera, renderer };
-}
-let liveCard = null, snapRig = null, snapChain = Promise.resolve();
-const snapCache = new Map();
-function closeLiveCard() {
-  if (!liveCard) return;
-  const l = liveCard; liveCard = null; l.dead = true;
-  try { document.removeEventListener("pointerdown", l.away, true); l.ro.disconnect(); l.controls.dispose(); if (l.model) disposeObject(l.model); l.renderer.dispose(); l.renderer.forceContextLoss(); l.renderer.domElement.remove(); } catch (e) { /* already gone */ }
-}
-async function startLiveCard(host, part) {
-  const w = host.clientWidth || 320, h = host.clientHeight || 230;
-  const { scene, camera, renderer } = newStage(w, h, false);
-  const dom = renderer.domElement; dom.className = "p3d-canvas"; host.appendChild(dom);
-  const controls = new OrbitControls(camera, dom); controls.enableDamping = true; controls.dampingFactor = 0.12;
-  const live = { renderer, controls, model: null, dead: false, until: 0, running: false, active: false };
-  liveCard = live;
-  /* Passive until tapped, so a swipe over the model still scrolls the chat. */
-  controls.enabled = false; dom.style.touchAction = "pan-y";
-  const hint = host.querySelector(".p3d-hint"), done = document.createElement("button");
-  done.type = "button"; done.className = "p3d-done"; done.textContent = "Done"; host.appendChild(done);
-  const setActive = (on) => {
-    live.active = on; controls.enabled = on; dom.style.touchAction = on ? "none" : "pan-y"; host.classList.toggle("active", on);
-    if (hint) hint.textContent = on ? "Drag to rotate · tap a face to measure" : "Tap the model to rotate it · tap a value to change it";
-    if (!on) clearPick();
-  };
-  /* Face picking: tap a face for its size, tap a second one for what lies between them. */
-  const info = document.createElement("div"); info.className = "p3d-info"; info.hidden = true; host.appendChild(info);
-  live.picks = []; live.marks = [];
-  const clearPick = () => {
-    for (const m of live.marks) { if (live.mesh) live.mesh.remove(m); m.geometry.dispose(); m.material.dispose(); }
-    live.marks = []; live.picks = []; info.hidden = true; info.innerHTML = ""; if (hint) hint.style.display = "";
-    kick(200);
-  };
-  const mark = (face, color) => {
-    const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.BufferAttribute(live.analysis.trianglePositions(face), 3));
-    const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.6, side: THREE.DoubleSide, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
-    live.mesh.add(m); live.marks.push(m);
-  };
-  const showPick = () => {
-    const [a, b] = live.picks;
-    const d = b ? describePair(a, b) : describeFace(a);
-    if (!d) return;
-    info.hidden = false; if (hint) hint.style.display = "none";
-    const canResize = !b && d.isHole && !onEngine();
-    info.innerHTML = `<b>${esc(d.title)}</b>` + d.lines.map((l) => `<span>${esc(l)}</span>`).join("") +
-      (b ? "" : "<em>Tap another face to measure to it</em>") +
-      `<div class="p3d-info-actions">${canResize ? '<button type="button" data-p3d="resize">Change size</button>' : ""}<button type="button" data-p3d="clear">Clear</button></div>`;
-    info._diameter = d.diameter;
-  };
-  info.addEventListener("click", (e) => {
-    const b = e.target.closest("[data-p3d]"); if (!b) return; e.stopPropagation();
-    if (b.dataset.p3d === "clear") { clearPick(); return; }
-    if (b.dataset.p3d === "resize") {
-      const old = +info._diameter.toFixed(2);
-      info.querySelector(".p3d-info-actions").innerHTML = `<input type="number" step="any" inputmode="decimal" value="${old}" aria-label="New diameter in mm"><button type="button" data-p3d="apply">Set</button>`;
-      info.querySelector("input").focus();
-    } else if (b.dataset.p3d === "apply") {
-      const v = Number(info.querySelector("input").value), old = +info._diameter.toFixed(2);
-      if (v > 0 && v !== old) send(`Change the ${old} mm hole to ${v} mm`);
-    }
-  });
-  live.pick = (e) => {
-    if (!live.mesh) return;
-    if (!live.analysis) { try { const g = live.mesh.geometry; live.analysis = analyzeMesh(g.attributes.position.array, g.index ? g.index.array : null); } catch (err) { return; } }
-    const r = dom.getBoundingClientRect();
-    const ray = new THREE.Raycaster(); ray.setFromCamera(new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -(((e.clientY - r.top) / r.height) * 2 - 1)), camera);
-    const hit = ray.intersectObject(live.mesh, false)[0];
-    const face = hit && live.analysis.faceAt(hit.faceIndex);
-    if (!face) return;
-    if (live.picks.length >= 2) clearPick();
-    live.picks.push(face); mark(face, live.picks.length === 1 ? 0xe8601c : 0x2f7de1);
-    showPick(); kick(300);
-  };
-  let down = null;
-  dom.addEventListener("pointerdown", (e) => { down = { x: e.clientX, y: e.clientY, t: performance.now() }; });
-  dom.addEventListener("pointerup", (e) => {
-    if (live.active && down && Math.hypot(e.clientX - down.x, e.clientY - down.y) < 6 && performance.now() - down.t < 600) live.pick(e);
-    down = null;
-  });
-  host.addEventListener("click", (e) => { if (e.target.closest(".p3d-done")) setActive(false); else if (!live.active) setActive(true); });
-  live.away = (e) => { if (live.active && !host.contains(e.target)) setActive(false); };
-  document.addEventListener("pointerdown", live.away, true);
-  const frame = () => {
-    if (live.dead) return;
-    controls.update(); renderer.render(scene, camera);
-    if (performance.now() < live.until) requestAnimationFrame(frame); else live.running = false;
-  };
-  const kick = (ms) => { live.until = Math.max(live.until, performance.now() + ms); if (!live.running && !live.dead) { live.running = true; requestAnimationFrame(frame); } };
-  controls.addEventListener("start", () => kick(600)); controls.addEventListener("change", () => kick(500));
-  live.ro = new ResizeObserver(() => { const nw = host.clientWidth, nh = host.clientHeight; if (nw && nh) { renderer.setSize(nw, nh); camera.aspect = nw / nh; camera.updateProjectionMatrix(); kick(300); } });
-  live.ro.observe(host);
-  try {
-    const obj = await partModel(part);
-    if (live.dead) { disposeObject(obj); return; }
-    const { wrap, midY, size } = fitModel(obj);
-    scene.add(wrap); live.model = wrap;
-    wrap.traverse((o) => { if (o.isMesh && !live.mesh) live.mesh = o; });
-    camera.position.set(95, 80 + midY, 95); controls.target.set(0, midY, 0); controls.update();
-    host.classList.add("ready"); host.querySelectorAll("svg").forEach((n) => n.remove());
-    const tag = document.createElement("span"); tag.className = "p3d-dim"; tag.textContent = sizeLabel(size); host.appendChild(tag);
-    kick(1500);
-  } catch (e) { console.warn("3D card could not load:", e); host.classList.add("failed"); }
-}
-function snapshotOf(part) {
-  const key = part.id + ":" + (part.jobId || part.demoKind || "");
-  if (snapCache.has(key)) return Promise.resolve(snapCache.get(key));
-  snapChain = snapChain.then(async () => {
-    if (!snapRig) snapRig = newStage(480, 300, true);
-    const { scene, camera, renderer } = snapRig;
-    const obj = await partModel(part), { wrap, midY } = fitModel(obj);
-    scene.add(wrap); camera.position.set(95, 80 + midY, 95); camera.lookAt(0, midY, 0);
-    renderer.render(scene, camera); const url = renderer.domElement.toDataURL("image/png");
-    scene.remove(wrap); disposeObject(wrap); snapCache.set(key, url); return url;
-  }).catch(() => null);
-  return snapChain;
-}
-function mountCardViewers(c) {
-  closeLiveCard();
-  document.querySelectorAll("#threadInner .part-3d").forEach((host) => {
-    const part = partOf(c, host.dataset["3d"]); if (!part) return;
-    try {
-      if (host.classList.contains("live")) startLiveCard(host, part).catch(() => host.classList.add("failed"));
-      else snapshotOf(part).then((url) => { if (url && host.isConnected) { host.innerHTML = `<img src="${url}" alt="${esc(part.title)}">`; host.classList.add("ready"); } });
-    } catch (e) { host.classList.add("failed"); }
-  });
-}
-
-/* Change a value by hand: the new number goes in as a normal message, so the version history and the checks stay as they are. */
-function editPhrase(key, v) {
-  const k = key.replace(/_mm$/, ""), mm = /_mm$/.test(key) ? " mm" : "";
-  if (/^thickness/.test(k)) return `Make it ${v} mm thick`;
-  if (/^width/.test(k)) return `Make it ${v} mm wide`;
-  if (/^height/.test(k)) return `Make it ${v} mm tall`;
-  if (/^length/.test(k)) return `Make it ${v} mm long`;
-  if (/^depth/.test(k)) return `Make it ${v} mm deep`;
-  if (/hole_count$/.test(k)) return `${v} holes`;
-  if (/^teeth/.test(k)) return `${v} teeth`;
-  if (/^fillet/.test(k)) return `Use ${v} mm fillets`;
-  if (/^floors$/.test(k)) return `Make it ${v} floors`;
-  if (/pitch/.test(k)) return `Make the roof pitch ${v} degrees`;
-  if (/bore/.test(k)) return `Make the bore ${v} mm`;
-  if (/diameter/.test(k)) return `Make the diameter ${v} mm`;
-  return `Set ${k.replace(/_/g, " ")} to ${v}${mm}`;
-}
-/* The rules-only Engine plan reads fixed phrases. Everything else needs a plan that reads any wording. */
-const ENGINE_READABLE = /^(thickness|width|height|length|depth|teeth|fillet|diameter)|hole_count$|bore/;
-const onEngine = () => String(S.model || "").startsWith("engine");
-function editChip(chip) {
-  if (chip.querySelector("input") || S.busy) return;
-  const key = chip.dataset.editParam, old = chip.dataset.val, prev = chip.innerHTML;
-  if (onEngine() && !ENGINE_READABLE.test(key.replace(/_mm$/, ""))) { toast("Switch to Basic or higher to change this value."); return; }
-  const input = document.createElement("input");
-  input.type = "number"; input.step = "any"; input.inputMode = "decimal"; input.value = old; input.className = "chip-input"; input.setAttribute("aria-label", "New value for " + key);
-  chip.textContent = key.replace(/_mm$/, "").replace(/_/g, " ") + " "; chip.appendChild(input); input.focus(); input.select();
-  let done = false;
-  const finish = (go) => {
-    if (done) return; done = true;
-    const v = input.value.trim();
-    if (go && v !== "" && Number(v) > 0 && Number(v) !== Number(old)) send(editPhrase(key, Number(v)));
-    else chip.innerHTML = prev;
-  };
-  input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); finish(true); } else if (e.key === "Escape") finish(false); });
-  input.addEventListener("blur", () => finish(true));
 }
 /* What the last edit changed, measured on the build. Rows the server marks worse are highlighted. */
 function diffHtml(d) {
@@ -861,16 +561,15 @@ function choicesHtml(choices) {
     q.options.map((o) => `<button class="chip" data-say="${esc(q.question + " " + o)}">${esc(o)}</button>`).join("") + "</div></div>").join("") + "</div>";
 }
 function needCreditsHtml() {
-  return `<div class="need-credits"><button class="btn btn-primary btn-sm" data-buy="open">Upgrade to continue</button></div>`;
+  return `<div class="need-credits"><b>You are out of credits</b><p>Generating the full files costs credits. Messages are free within each plan's daily allowance.</p><button class="btn btn-primary btn-sm" data-buy="open">Get credits</button></div>`;
 }
 function scrollEnd(smooth) { const t = $("thread"); t.scrollTo({ top: t.scrollHeight, behavior: smooth ? "smooth" : "auto" }); }
 
 /* working indicator */
 let workTimer = 0;
-function showWorking(steps, waitText) {
+function showWorking() {
   const inner = $("threadInner");
-  steps = steps || ["Reading your request", "Checking the dimensions", "Building the solid", "Preparing the preview"];
-  waitText = waitText || "Still building. Detailed parts can take a minute or two.";
+  const steps = ["Reading your request", "Checking the dimensions", "Building the solid", "Preparing the preview"];
   const el = document.createElement("div"); el.className = "msg"; el.id = "working";
   el.innerHTML = ASSIST_AVA + '<div class="reply"><div class="working">' + steps.map((s, i) => `<div class="work-row ${i === 0 ? "live" : ""}" data-i="${i}"><span class="tick"></span><span>${s}</span></div>`).join("") + "</div></div>";
   inner.appendChild(el); scrollEnd(true);
@@ -883,7 +582,7 @@ function showWorking(steps, waitText) {
     else {
       clearInterval(workTimer);
       const more = document.createElement("div"); more.className = "work-row live";
-      more.innerHTML = '<span class="tick"></span><span>' + esc(waitText) + '</span>';
+      more.innerHTML = '<span class="tick"></span><span>Still building. Detailed parts can take a minute or two.</span>';
       el.querySelector(".working").appendChild(more);
       setTimeout(() => { if (more.isConnected) more.lastChild.textContent = "This one is taking longer than usual. You can keep waiting."; }, 60000);
     }
@@ -900,9 +599,7 @@ function renderCanvas() {
     const vers = versionsOf(c, part);
     sel.hidden = vers.length < 2;
     sel.innerHTML = vers.map((p, i) => `<option value="${p.id}"${p.id === part.id ? " selected" : ""}>v${i + 1}</option>`).join("");
-    $("cvPrev").hidden = $("cvNext").hidden = sel.hidden;
-    $("cvPrev").disabled = sel.selectedIndex <= 0; $("cvNext").disabled = sel.selectedIndex >= vers.length - 1;
-  } else { sel.hidden = true; $("cvPrev").hidden = $("cvNext").hidden = true; }
+  } else sel.hidden = true;
   document.querySelectorAll(".tab").forEach((t) => t.setAttribute("aria-selected", t.dataset.tab === S.tab ? "true" : "false"));
   const panel = $("panel");
   if (!part) { panel.innerHTML = '<div class="chat-empty">Build a part to see its specs, files and on-chain record here.</div>'; return; }
@@ -1330,7 +1027,7 @@ async function openCredits() {
   try { cfg = DEMO ? { credit_price_bot: 0.01, pack_1000_price_bot: 1, pack_1000_credits: 1000, pack_10000_price_bot: 10, pack_10000_credits: 10000 } : await Auth.getChainConfig(); } catch (e) { toast("Could not load pricing. Try again shortly."); return; }
   const tiers = [["single", "1 credit", cfg.credit_price_bot], ["pack_1000", (cfg.pack_1000_credits || 1000).toLocaleString() + " credits", cfg.pack_1000_price_bot], ["pack_10000", (cfg.pack_10000_credits || 10000).toLocaleString() + " credits", cfg.pack_10000_price_bot]];
   const m = document.createElement("div"); m.className = "modal"; m.setAttribute("role", "dialog"); m.setAttribute("aria-modal", "true");
-  m.innerHTML = `<div class="modal-card"><h3>Get credits</h3><p>Paid in native BOT on BOT Chain. Credits cover generating files and answers to your questions. Building previews is free, and every export format is included. See the pricing page for details.</p>` +
+  m.innerHTML = `<div class="modal-card"><h3>Get credits</h3><p>Paid in native BOT on BOT Chain. Generating the files for a version uses credits, and every export format is included. Messages are free within each plan's daily allowance. See the pricing page for details.</p>` +
     tiers.map(([id, label, price]) => `<div class="tier"><div><b>${label}</b><span>${price} BOT</span></div><button class="btn btn-primary btn-sm" data-tier="${id}">Buy</button></div>`).join("") +
     `<div class="modal-foot"><button class="btn btn-ghost btn-sm" data-close>Close</button></div></div>`;
   document.body.appendChild(m);
@@ -1432,26 +1129,6 @@ $("newChat").addEventListener("click", () => { S.activeId = null; S.activePartId
 $("signOut").addEventListener("click", async () => { await Auth.signOut(); if (DEMO) location.href = "studio.html"; else route(); });
 $("tReset").addEventListener("click", viewerReset);
 $("tWire").addEventListener("click", (e) => { V.wire = !V.wire; e.currentTarget.setAttribute("aria-pressed", V.wire); applyWire(); });
-$("tOrtho").addEventListener("click", (e) => { const on = V.camera !== V.ortho; setOrtho(on); e.currentTarget.setAttribute("aria-pressed", String(on)); });
-$("tSection").addEventListener("click", (e) => {
-  if (!V.mesh) return; SEC.on = !SEC.on; e.currentTarget.setAttribute("aria-pressed", String(SEC.on)); applySection(); sheetSync();
-});
-$("tExplode").addEventListener("click", (e) => {
-  if (!V.mesh) return;
-  if (!V.exp) {
-    if (!explodeSetup()) { toast("This part is one solid, so there is nothing to pull apart."); return; }
-    V.exp = true; explodeApply($("expT").value / 100);
-  } else { V.exp = false; explodeApply(0); }
-  e.currentTarget.setAttribute("aria-pressed", String(V.exp)); sheetSync();
-});
-document.querySelectorAll("#cvSheet [data-axis]").forEach((b) => b.addEventListener("click", () => {
-  SEC.axis = b.dataset.axis; document.querySelectorAll("#cvSheet [data-axis]").forEach((x) => x.setAttribute("aria-pressed", String(x === b))); applySection();
-}));
-$("secT").addEventListener("input", (e) => { SEC.t = e.target.value / 100; applySection(); });
-$("secFlip").addEventListener("click", () => { SEC.flip = !SEC.flip; applySection(); });
-$("expT").addEventListener("input", (e) => { if (V.exp) explodeApply(e.target.value / 100); });
-function stepVersion(d) { const sel = $("cvVersion"), i = sel.selectedIndex + d; if (i < 0 || i >= sel.options.length) return; sel.selectedIndex = i; sel.dispatchEvent(new Event("change")); }
-$("cvPrev").addEventListener("click", () => stepVersion(-1)); $("cvNext").addEventListener("click", () => stepVersion(1));
 $("tGrid").addEventListener("click", (e) => { V.grid = !V.grid; e.currentTarget.setAttribute("aria-pressed", V.grid); if (V.gridObj) V.gridObj.visible = V.grid; });
 $("cvVersion").addEventListener("change", (e) => { S.activePartId = e.target.value; renderCanvas(); viewerShow(partOf(chat(), S.activePartId)); });
 document.querySelector(".tabs").addEventListener("click", (e) => { const t = e.target.closest(".tab"); if (!t) return; S.tab = t.dataset.tab; renderCanvas(); });
@@ -1477,7 +1154,6 @@ $("chatList").addEventListener("click", async (e) => {
 });
 $("threadInner").addEventListener("click", async (e) => {
   const say = e.target.closest("[data-say]"); if (say) { send(say.dataset.say); return; }
-  const ec = e.target.closest("[data-edit-param]"); if (ec) { editChip(ec); return; }
   const rt = e.target.closest("[data-retry]");
   if (rt) {
     const c = chat(), i = c ? c.messages.findIndex((m) => m.id === rt.dataset.retry) : -1;
@@ -1544,9 +1220,9 @@ function fillAccount() {
 /* ============================================================ AI picker */
 const DEMO_AI = { default: "basic:deepseek", check_credits: 5, tiers: [
   { id: "engine", label: "Engine", messages_per_day: null, messages_left: null, generate_credits: 2, models: [{ id: "engine:rules", label: "No AI (engine only)", available: true }] },
-  { id: "basic", label: "Basic", messages_per_day: null, messages_left: null, generate_credits: 10, models: [{ id: "basic:deepseek", label: "DeepSeek", available: true }] },
-  { id: "plus", label: "Plus", messages_per_day: null, messages_left: null, generate_credits: 25, models: [{ id: "plus:gpt", label: "GPT", available: true }, { id: "plus:qwen", label: "Qwen", available: true }] },
-  { id: "advanced", label: "Advanced", messages_per_day: null, messages_left: null, generate_credits: 40, models: [{ id: "advanced:claude", label: "Claude", available: true }] }
+  { id: "basic", label: "Basic", messages_per_day: 40, messages_left: 40, generate_credits: 10, models: [{ id: "basic:deepseek", label: "DeepSeek", available: true }] },
+  { id: "plus", label: "Plus", messages_per_day: 15, messages_left: 15, generate_credits: 25, models: [{ id: "plus:gpt", label: "GPT", available: true }, { id: "plus:qwen", label: "Qwen", available: true }] },
+  { id: "advanced", label: "Advanced", messages_per_day: 4, messages_left: 4, generate_credits: 40, models: [{ id: "advanced:claude", label: "Claude", available: true }] }
 ] };
 try { S.model = localStorage.getItem("nitocad_studio_model") || "basic:deepseek"; } catch (e) { S.model = "basic:deepseek"; }
 const TIER_NAME = { engine: "Engine", basic: "Basic", plus: "Standard", advanced: "Advanced" };
@@ -1578,10 +1254,10 @@ function renderAiBar() {
   $("tierLabel").textContent = tierName(cur);
   $("tierMenu").innerHTML = S.ai.tiers.map((t) => {
     const ok = tierUsable(t), on = t.id === cur.id;
-    const meta = !ok ? "Soon" : "";
+    const meta = !ok ? "Soon" : t.messages_per_day == null ? "No daily limit" : `${t.messages_left} left today`;
     return `<li role="option" tabindex="${ok ? 0 : -1}" data-tier="${esc(t.id)}" aria-selected="${on}" ${ok ? "" : 'aria-disabled="true"'} class="${on ? "on" : ""}${ok ? "" : " off"}"><span>${esc(tierName(t))}</span><small>${esc(meta)}</small></li>`;
   }).join("");
-  $("aiNote").textContent = "";
+  $("aiNote").textContent = cur.messages_per_day == null ? "" : `${cur.messages_left} of ${cur.messages_per_day} messages left today`;
 }
 function tierMenu(open) {
   const m = $("tierMenu"), b = $("tierBtn");
@@ -1602,7 +1278,7 @@ document.addEventListener("click", (e) => { if (!e.target.closest("#tierPick")) 
 $("tplBtn").addEventListener("click", openTemplates);
 
 async function loadConfig() {
-  document.querySelector(".fineprint").textContent = "Previews and changes are free. Generating the full files uses credits, shown on the button. Check dimensions before you manufacture.";
+  document.querySelector(".fineprint").textContent = "Previews, changes and questions are free. Generating the full files uses credits, shown on the button. Check dimensions before you manufacture.";
 }
 let booted = false;
 function route() {
