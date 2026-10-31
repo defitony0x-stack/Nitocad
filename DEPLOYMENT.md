@@ -65,6 +65,7 @@ At minimum for a real deploy, set:
 - `CORS_ORIGINS=https://your-frontend-domain.com` (not `*` — see the
   comment in `.env.example`)
 - `DEEPSEEK_API_KEY` if you want server-side DeepSeek parsing available
+- `VISION_API_KEY`, `VISION_MODEL` and (for non-OpenAI providers) `VISION_BASE_URL` if you want CAD Studio to read images and PDF pages. Leave them unset to switch that off. STEP/IGES/BREP reading and PDF text need no key
   without every caller bringing their own key
 - R2 credentials if you want generated files to survive beyond this
   one VPS's disk (recommended, but not required to get started — the
@@ -103,13 +104,36 @@ first time.
 ## 5. Verify end to end
 
 ```bash
-# Issue a key
-curl -X POST https://your-domain.com/api/keys/generate
+# Step 1: get a nonce to sign (this part is plain curl)
+curl -X POST https://your-domain.com/auth/nonce \
+  -H "Content-Type: application/json" \
+  -d '{"wallet_address": "0xYourWalletAddress"}'
+# -> {"nonce": "...", "message": "Sign in to NitoCAD...\n\nWallet: ...\nNonce: ..."}
 
-# Generate a part
+# Step 2: sign that exact "message" string with your wallet - this needs
+# a real wallet or a script (curl can't sign anything), e.g. Python:
+#   from eth_account import Account
+#   from eth_account.messages import encode_defunct
+#   signed = Account.sign_message(encode_defunct(text=message), private_key=...)
+#   print(signed.signature.hex())
+
+# Step 3: exchange the signature for a session
+curl -X POST https://your-domain.com/auth/verify \
+  -H "Content-Type: application/json" \
+  -d '{"wallet_address": "0xYourWalletAddress", "nonce": "<nonce from step 1>", "signature": "<from step 2>"}'
+# -> {"session_id": "...", "wallet_address": "...", "expires_at": "..."}
+
+# Step 4: buy at least 1 credit (needs a real on-chain payment of
+# BOTCHAIN_CREDIT_PRICE_BOT to TREASURY_ADDRESS first - see config.py)
+curl -X POST https://your-domain.com/credits/purchase \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <session_id from step 3>" \
+  -d '{"tx_hash": "<your payment tx hash>", "tier": "single"}'
+
+# Step 5: generate a part - spends 1 credit, no further payment needed
 curl -X POST https://your-domain.com/generate \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: <key from above>" \
+  -H "Authorization: Bearer <session_id from step 3>" \
   -d '{"description": "shaft 10mm diameter, 50mm long"}'
 ```
 
@@ -144,7 +168,7 @@ without it.
 ./deploy/backup.sh
 ```
 
-Backs up the sqlite DB (job history, API keys) via `sqlite3`'s own
+Backs up the sqlite DB (job history, wallet sessions, credit balances) via `sqlite3`'s own
 `.backup()` — safe to run against a live database, unlike copying the
 file directly. Wire it into cron for daily backups (the script's own
 header comment has the exact crontab line). If you've configured R2,

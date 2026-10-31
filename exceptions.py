@@ -84,6 +84,15 @@ class AssemblyError(NitocadError):
     status_code = 422
 
 
+class PaymentError(NitocadError):
+    """BOT Chain payment verification failed - unconfirmed, wrong
+    amount, wrong recipient, wrong sender, reverted, or an already-used
+    tx hash. See botchain_pay.py. Client-fixable in the sense that a
+    correct payment resolves it - status 402."""
+
+    status_code = 402
+
+
 def register_exception_handlers(app: Any) -> None:
     """Wire NitocadError (and its subclasses) plus a catch-all fallback
     into the given FastAPI app. Kept as a function (rather than

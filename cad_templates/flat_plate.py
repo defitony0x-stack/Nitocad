@@ -28,8 +28,10 @@ def generate_flat_plate(params: dict) -> cq.Workplane:
     width = params.get("width_mm", 80.0)
     thickness = params.get("thickness_mm", 5.0)
     hole_pattern = params.get("hole_pattern", "rectangular")
-    hole_count_x = params.get("hole_count_x", 4)
-    hole_count_y = params.get("hole_count_y", 3)
+    # A plate has no holes unless the request asks for some. (It used to default to a 4 x 3 grid, so a plate
+    # that never mentioned holes came out with twelve.)
+    hole_count_x = params.get("hole_count_x", 0)
+    hole_count_y = params.get("hole_count_y", 0)
     hole_diameter = params.get("hole_diameter_mm", 3.2)
     corner_fillet = params.get("corner_fillet_mm", 3.0)
     
