@@ -412,7 +412,7 @@ const V = { ready: false, running: false, mesh: null, wire: false, grid: true, t
 function viewerInit() {
   if (V.ready) return;
   const el = $("cvStage");
-  V.scene = new THREE.Scene(); V.scene.background = new THREE.Color(0xEDF2F4);
+  V.scene = new THREE.Scene(); V.scene.background = new THREE.Color(0xE7E4F8);
   V.camera = new THREE.PerspectiveCamera(40, 1, 0.1, 2000);
   V.persp = V.camera; V.ortho = new THREE.OrthographicCamera(-50, 50, 50, -50, 0.1, 2000);
   V.plane = new THREE.Plane(new THREE.Vector3(0, -1, 0), 0);
@@ -422,10 +422,10 @@ function viewerInit() {
   V.controls = new OrbitControls(V.camera, V.renderer.domElement);
   V.controls.enableDamping = true;
   // the studio environment does most of the lighting, so these two only add shape and a shadow
-  V.scene.add(new THREE.HemisphereLight(0xffffff, 0xb7c3d1, 0.35));
+  V.scene.add(new THREE.HemisphereLight(0xffffff, 0xB9B2E2, 0.35));
   const dl = new THREE.DirectionalLight(0xffffff, 1.6); dl.position.set(60, 90, 50); V.scene.add(dl);
   applyRealisticLook(V.scene, V.renderer, dl);
-  V.gridObj = new THREE.GridHelper(160, 16, 0xb7c3d1, 0xd5dde6); V.scene.add(V.gridObj);
+  V.gridObj = new THREE.GridHelper(160, 16, 0xB9B2E2, 0xD6D1F0); V.scene.add(V.gridObj);
   new ResizeObserver(viewerFit).observe(el);
   V.ready = true;
 }
@@ -694,11 +694,11 @@ function sizeLabel(size) {
   return `${f(size.x)} x ${f(size.z)} x ${f(size.y)} ${big ? "m" : "mm"}`;
 }
 function newStage(w, h, preserve) {
-  const scene = new THREE.Scene(); scene.background = new THREE.Color(0xEDF2F4);
+  const scene = new THREE.Scene(); scene.background = new THREE.Color(0xE7E4F8);
   const camera = new THREE.PerspectiveCamera(40, w / h, 0.1, 2000);
   const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: !!preserve });
   renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2)); renderer.setSize(w, h);
-  scene.add(new THREE.HemisphereLight(0xffffff, 0xb7c3d1, 0.35));
+  scene.add(new THREE.HemisphereLight(0xffffff, 0xB9B2E2, 0.35));
   const dl = new THREE.DirectionalLight(0xffffff, 1.6); dl.position.set(60, 90, 50); scene.add(dl);
   applyRealisticLook(scene, renderer, dl);
   return { scene, camera, renderer };

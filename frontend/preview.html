@@ -229,17 +229,17 @@
     color:var(--gold);margin:0 0 10px;
   }
   .demo-viewer{position:relative;width:100%;height:380px;background:#fff;border:1px solid var(--line);border-radius:0;overflow:hidden;touch-action:none;}
-  .viewer-readout{font-family:'IBM Plex Mono',monospace;font-size:.7rem;color:#555;pointer-events:none;}
+  .viewer-readout{font-family:'IBM Plex Mono',monospace;font-size:.7rem;color:#5A5282;pointer-events:none;}
   .viewer-bottom{position:absolute;left:8px;right:8px;bottom:8px;display:flex;flex-direction:column;gap:6px;pointer-events:none;}
   .viewer-row{display:flex;align-items:center;gap:8px;}
   .viewer-row > *{pointer-events:auto;}
-  .viewer-slider{flex:1 1 80px;min-width:60px;accent-color:#1a1a1a;}
-  .viewer-tag,.viewer-sec{font-family:'IBM Plex Mono',monospace;font-size:.68rem;color:#1a1a1a;}
+  .viewer-slider{flex:1 1 80px;min-width:60px;accent-color:#1E1646;}
+  .viewer-tag,.viewer-sec{font-family:'IBM Plex Mono',monospace;font-size:.68rem;color:#1E1646;}
   .viewer-sec{min-width:70px;text-align:right;}
   .viewer-bar{position:absolute;left:8px;right:8px;top:8px;display:flex;flex-wrap:wrap;gap:6px 10px;justify-content:space-between;pointer-events:none;}
   .viewer-group{display:flex;gap:4px;pointer-events:auto;}
-  .viewer-bar button{font-family:'IBM Plex Mono',monospace;font-size:.68rem;padding:4px 8px;border:1px solid #1a1a1a;border-radius:0;background:#fff;color:#1a1a1a;cursor:pointer;}
-  .viewer-bar button:hover,.viewer-bar button.on{background:#1a1a1a;color:#fff;}
+  .viewer-bar button{font-family:'IBM Plex Mono',monospace;font-size:.68rem;padding:4px 8px;border:1px solid #1E1646;border-radius:0;background:#fff;color:#1E1646;cursor:pointer;}
+  .viewer-bar button:hover,.viewer-bar button.on{background:#1E1646;color:#fff;}
   .demo-open{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin:14px 0 4px;}
   .demo-open label{cursor:pointer;}
   .parts{margin-top:12px;border:1px solid var(--line);background:#fff;}
@@ -249,10 +249,10 @@
   .part-row.sel{background:var(--fog);}
   .part-row.off{opacity:.45;}
   .part-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-  .swatch{width:12px;height:12px;border:1px solid #1a1a1a;flex:none;}
-  .part-more{padding:6px 8px;font-family:'IBM Plex Mono',monospace;font-size:.7rem;color:#555;}
-  .parts button{font-family:'IBM Plex Mono',monospace;font-size:.68rem;padding:3px 7px;border:1px solid #1a1a1a;border-radius:0;background:#fff;color:#1a1a1a;cursor:pointer;}
-  .parts button:hover{background:#1a1a1a;color:#fff;}
+  .swatch{width:12px;height:12px;border:1px solid #1E1646;flex:none;}
+  .part-more{padding:6px 8px;font-family:'IBM Plex Mono',monospace;font-size:.7rem;color:#5A5282;}
+  .parts button{font-family:'IBM Plex Mono',monospace;font-size:.68rem;padding:3px 7px;border:1px solid #1E1646;border-radius:0;background:#fff;color:#1E1646;cursor:pointer;}
+  .parts button:hover{background:#1E1646;color:#fff;}
   .demo-params{
     font-family:'IBM Plex Mono',monospace;font-size:.78rem;line-height:1.9;
     background:var(--fog);border-radius:12px;padding:16px 18px;
@@ -750,9 +750,9 @@ import { materialFor } from "./viewer-look.js";
   //             or the file's own colors, on a grid with a perspective camera
   //  sheet:   drawing-sheet look, pale fill, ink edges, orthographic camera
   //  wire:    see-through hidden-line view, orthographic camera
-  const PART_FILL = 0xA6C0F6;
-  const EDGE_INK = 0x1a1a1a;
-  const EDGE_ACCENT = 0x1F4FD8;
+  const PART_FILL = 0xB4ABF0;
+  const EDGE_INK = 0x1E1646;
+  const EDGE_ACCENT = 0x5B47D6;
   const EDGE_ANGLE = 28;
   const EDGE_TRI_BUDGET = 600000;
   const PARTS_LIST_MAX = 300;
@@ -760,9 +760,9 @@ import { materialFor } from "./viewer-look.js";
   const STYLE_KEY = 'nitocad_preview_style_v2';   // v2: Metal became the default look
   let partMaterialText = '';
   const STYLES = {
-    classic: { label: 'Metal',   bg: 0xE4E4E2, cam: 'persp' },
-    sheet:   { label: 'Sheet',   bg: 0xFFFFFF, cam: 'ortho' },
-    wire:    { label: 'Wire',    bg: 0xFFFFFF, cam: 'ortho' }
+    classic: { label: 'Metal',   bg: 0xE7E4F8, cam: 'persp' },
+    sheet:   { label: 'Sheet',   bg: 0xF3F1FC, cam: 'ortho' },
+    wire:    { label: 'Wire',    bg: 0xF3F1FC, cam: 'ortho' }
   };
   const VIEW_DIRS = {
     iso:   [1, -1, 0.8],
