@@ -19,17 +19,17 @@ html[data-theme="dark"] .theme-toggle .i-moon{display:none;}
 
 html[data-theme="dark"]{
   color-scheme:dark;
-  --ink:#F4F0FF;
-  --ink-soft:#B5ADDB;
-  --paper:#17103A;
-  --fog:#1D1547;
-  --line:#3B3070;
-  --orange:#E8480F;
+  --ink:#FBF8FF;
+  --ink-soft:#D3CEF5;
+  --paper:#3F3A97;
+  --fog:#4A46A6;
+  --line:#6F68C8;
+  --orange:#F2490F;
   --dot:#FF5A1F;
-  --orange-deep:#D4CEFF;
+  --orange-deep:#EAE5FF;
   --gold:#D9B65F;
-  --surface:#241A55;
-  --deep:#1A1243;
+  --surface:#332B7E;
+  --deep:#2A2468;
   --botchain-bright-deep:#3FD6A8;
 }
 
@@ -51,8 +51,8 @@ html[data-theme="dark"] .wp-note,
 html[data-theme="dark"] .wp-toc,
 html[data-theme="dark"] .prov-pill{background:var(--surface);}
 html[data-theme="dark"] .demo-bar{background:var(--fog);}
-html[data-theme="dark"] .demo-warn{background:rgba(160,150,220,.12);}
-html[data-theme="dark"] header{background:rgba(23,16,58,.85);}
+html[data-theme="dark"] .demo-warn{background:rgba(190,180,240,.12);}
+html[data-theme="dark"] header{background:rgba(52,44,128,.88);}
 
 /* form controls */
 html[data-theme="dark"] input,
@@ -60,7 +60,7 @@ html[data-theme="dark"] textarea,
 html[data-theme="dark"] select,
 html[data-theme="dark"] .demo-cfg button,
 html[data-theme="dark"] .demo-examples button{background:var(--surface);color:var(--ink);border-color:var(--line);}
-html[data-theme="dark"] ::placeholder{color:#8D84B8;}
+html[data-theme="dark"] ::placeholder{color:#B3AEE3;}
 
 /* hardcoded body text colors */
 html[data-theme="dark"] .legal p,
@@ -70,22 +70,22 @@ html[data-theme="dark"] .wp-article p,
 html[data-theme="dark"] .wp-article li,
 html[data-theme="dark"] .wp-article dd,
 html[data-theme="dark"] .wp-table th,
-html[data-theme="dark"] .wp-table td{color:#DAD4F5;}
+html[data-theme="dark"] .wp-table td{color:#E6E2FA;}
 html[data-theme="dark"] .wp-table thead th{color:var(--ink);}
 html[data-theme="dark"] .wp-rule{color:var(--ink) !important;}
 html[data-theme="dark"] .draft{background:#2A2312;border-color:#5C4C1E;color:#E6CF8A;}
 html[data-theme="dark"] .part-more{color:var(--ink-soft);}
-html[data-theme="dark"] .parts button{color:var(--ink);border-color:#5A4DA0;}
+html[data-theme="dark"] .parts button{color:var(--ink);border-color:#8A82D8;}
 
 /* var(--ink) was used as a dark panel color, so pin those panels */
 html[data-theme="dark"] .audience,
 html[data-theme="dark"] .pricing{background:var(--deep);}
-html[data-theme="dark"] .rig{background:#1F1650;}
-html[data-theme="dark"] .svc.core{background:var(--deep);border-color:#3B3070;}
+html[data-theme="dark"] .rig{background:#2D2672;}
+html[data-theme="dark"] .svc.core{background:var(--deep);border-color:#6F68C8;}
 html[data-theme="dark"] .chat-bubble.user,
-html[data-theme="dark"] .wp-steps>li::before{background:#4535A0;color:#fff;}
+html[data-theme="dark"] .wp-steps>li::before{background:#5B4BC0;color:#fff;}
 html[data-theme="dark"] .btn-ghost:hover,
-html[data-theme="dark"] .wp-btn-ghost:hover{background:var(--ink);border-color:var(--ink);color:#17103A;}
+html[data-theme="dark"] .wp-btn-ghost:hover{background:var(--ink);border-color:var(--ink);color:#2A2468;}
 html[data-theme="dark"] .wp-timeline>li::before{background:var(--paper);}
 
 /* the 3D viewport keeps its light scene so models stay readable */
@@ -99,45 +99,45 @@ html[data-theme="dark"] .spec,
 html[data-theme="dark"] .demo-shell,
 html[data-theme="dark"] .rig{box-shadow:none;}
 
-html[data-theme="dark"] .wp-hero{background:linear-gradient(180deg,#1A1244 0%,var(--paper) 100%);}
+html[data-theme="dark"] .wp-hero{background:linear-gradient(180deg,#3A3490 0%,var(--paper) 100%);}
 html[data-theme="dark"] .wp-btn-ghost{color:var(--ink);border-color:var(--ink);}
 
 /* white paper status tags */
 html[data-theme="dark"] .tag-fresh{background:rgba(63,214,168,.12);color:#5FE0B8;border-color:rgba(63,214,168,.35);}
-html[data-theme="dark"] .tag-ok{background:rgba(170,160,230,.16);color:#D4CEFF;border-color:rgba(170,160,230,.4);}
+html[data-theme="dark"] .tag-ok{background:rgba(200,192,250,.18);color:#EAE5FF;border-color:rgba(200,192,250,.45);}
 html[data-theme="dark"] .tag-stale{background:rgba(230,170,60,.14);color:#F0C36B;border-color:rgba(230,170,60,.4);}
-html[data-theme="dark"] .tag-unk{background:rgba(170,160,230,.12);color:#CFC8F5;border-color:rgba(170,160,230,.35);}
+html[data-theme="dark"] .tag-unk{background:rgba(200,192,250,.14);color:#E3DEFF;border-color:rgba(200,192,250,.4);}
 html[data-theme="dark"] .tag-miss{background:rgba(240,100,85,.14);color:#FF9A8C;border-color:rgba(240,100,85,.4);}
 
 /* dark only: no theme switch */
 .theme-toggle,.theme-slot .theme-toggle{display:none !important;}
 
-/* ---------- indigo tint and soft glow (violet, pink and lavender sky) ---------- */
+/* ---------- navy-black tint and soft glow (Mobi style) ---------- */
 html[data-theme="dark"]{
-  --glow-purple:rgba(168,118,224,.55);
-  --glow-pink:rgba(226,120,196,.42);
-  --glow-blue:rgba(120,130,232,.50);
+  --glow-purple:rgba(150,100,200,.55);
+  --glow-pink:rgba(214,140,190,.42);
+  --glow-blue:rgba(128,131,206,.50);
 }
 
 /* dark feature panels: navy-black with a purple, pink and blue glow in the lower right */
 html[data-theme="dark"] .audience,
 html[data-theme="dark"] .pricing,
 html[data-theme="dark"] .svc.core{
-  background-color:#1A1243;
+  background-color:#2A2468;
   background-image:
     radial-gradient(60% 70% at 88% 108%,var(--glow-blue) 0%,transparent 62%),
     radial-gradient(55% 65% at 100% 62%,var(--glow-pink) 0%,transparent 66%),
     radial-gradient(60% 70% at 78% 78%,var(--glow-purple) 0%,transparent 70%);
   background-repeat:no-repeat;
 }
-html[data-theme="dark"] .svc.core{border-color:#3B3070;}
+html[data-theme="dark"] .svc.core{border-color:#6F68C8;}
 
 /* hero: faint colour bloom behind the content */
 html[data-theme="dark"] .hero-v2{
   background-image:
-    radial-gradient(46% 62% at 88% 8%,rgba(150,110,230,.30) 0%,transparent 70%),
-    radial-gradient(40% 55% at 10% 0%,rgba(120,130,232,.20) 0%,transparent 70%),
-    radial-gradient(38% 50% at 70% 100%,rgba(226,120,196,.16) 0%,transparent 70%);
+    radial-gradient(46% 62% at 88% 8%,rgba(150,110,215,.30) 0%,transparent 70%),
+    radial-gradient(40% 55% at 10% 0%,rgba(128,131,206,.20) 0%,transparent 70%),
+    radial-gradient(38% 50% at 70% 100%,rgba(214,140,190,.16) 0%,transparent 70%);
   background-repeat:no-repeat;
 }
 
@@ -149,25 +149,28 @@ html[data-theme="dark"] .step,
 html[data-theme="dark"] .job-card,
 html[data-theme="dark"] .price-peek,
 html[data-theme="dark"] .wp-card{
-  background-color:#241A55;
-  background-image:radial-gradient(70% 90% at 100% 0%,rgba(160,118,226,.16) 0%,rgba(226,120,196,.07) 45%,transparent 72%);
+  background-color:#332B7E;
+  background-image:radial-gradient(70% 90% at 100% 0%,rgba(160,118,226,.16) 0%,rgba(214,140,190,.07) 45%,transparent 72%);
   background-repeat:no-repeat;
-  border-color:#3B3070;
+  border-color:#6F68C8;
 }
 
 /* whitepaper hero */
 html[data-theme="dark"] .wp-hero{
   background:
-    radial-gradient(50% 80% at 85% 0%,rgba(150,110,230,.30) 0%,transparent 70%),
-    radial-gradient(40% 70% at 12% 10%,rgba(120,130,232,.18) 0%,transparent 70%),
-    #17103A;
+    radial-gradient(50% 80% at 85% 0%,rgba(150,110,215,.30) 0%,transparent 70%),
+    radial-gradient(40% 70% at 12% 10%,rgba(128,131,206,.18) 0%,transparent 70%),
+    #3F3A97;
 }
 
 /* inputs and chips pick up the navy tint */
 html[data-theme="dark"] input,
 html[data-theme="dark"] textarea,
-html[data-theme="dark"] select{background:#241A55;border-color:#3B3070;}
-html[data-theme="dark"] header{background:rgba(23,16,58,.82);}
-html[data-theme="dark"] .rig{background:#1F1650;}
+html[data-theme="dark"] select{background:#332B7E;border-color:#6F68C8;}
+html[data-theme="dark"] header{background:rgba(52,44,128,.85);}
+html[data-theme="dark"] .rig{background:#2D2672;}
 
 html[data-theme="dark"] .hero-status li{background:var(--surface);}
+
+/* page background: the lock screen sky, indigo to periwinkle with a pink glow */
+html[data-theme="dark"] body{background:radial-gradient(60% 38% at 92% 10%,rgba(214,140,190,.50) 0%,transparent 70%),radial-gradient(70% 40% at 6% 58%,rgba(128,131,206,.45) 0%,transparent 70%),linear-gradient(180deg,#3B3590 0%,#4554B3 36%,#5A5DAD 68%,#3F3A97 100%) fixed;background-color:#3F3A97;}

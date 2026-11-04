@@ -5,5 +5,5 @@
   try { localStorage.removeItem('nitocad-theme'); } catch (e) {}
   var m = document.querySelector('meta[name="theme-color"]');
   if (!m && document.head) { m = document.createElement('meta'); m.name = 'theme-color'; document.head.appendChild(m); }
-  if (m) m.setAttribute('content', '#17103A');
+  if (m) m.setAttribute('content', '#3F3A97');
 })();
