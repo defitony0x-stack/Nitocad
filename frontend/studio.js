@@ -329,7 +329,7 @@ async function load() {
   await migrateLocal();
   const r = await api("GET", "/chats");
   if (r.authExpired) { Auth.clearSession(); return; }
-  S.chats = r.ok ? r.data.chats.map((c) => ({
+  S.chats = r.ok ? ((r.data && r.data.chats) || []).map((c) => ({
     id: c.id, title: c.title, updatedAt: Date.parse(c.updated_at) || Date.now(), remote: true, loaded: false,
     count: c.message_count, messages: [], parts: {}
   })) : [];
@@ -886,14 +886,14 @@ function allowanceMsg() {
   const m = S.meter;
   if (m && (m.plan === "pro" || m.plan === "max")) {
     const d = m.resets_at ? new Date(m.resets_at) : null;
-    return "You have used this week's AI allowance." + (m.standard_open ? " Standard still works." : "") + (d && !isNaN(d) ? " It resets " + d.toLocaleDateString() + "." : "");
+    return "You have used this week's allowance." + (m.standard_open ? " Basic still works." : "") + (d && !isNaN(d) ? " It resets " + d.toLocaleDateString() + "." : "");
   }
   return "You have used all your credits. Upgrade to keep going.";
 }
 function outOfAllowance() { toast(allowanceMsg()); openCredits(); }
 function needCreditsHtml() {
   const sub = !!S.meter && (S.meter.plan === "pro" || S.meter.plan === "max");
-  return `<div class="need-credits"><b>${sub ? "AI allowance used" : "You have used all your credits"}</b><p>${esc(allowanceMsg())}</p><button class="btn btn-primary btn-sm" data-buy="open">${sub ? "Add usage" : "Upgrade to continue"}</button> <a class="btn btn-ghost btn-sm" href="pricing.html">See plans</a></div>`;
+  return `<div class="need-credits"><b>${sub ? "Usage limit reached" : "You have used all your credits"}</b><p>${esc(allowanceMsg())}</p><button class="btn btn-primary btn-sm" data-buy="open">${sub ? "Add usage" : "Upgrade to continue"}</button> <a class="btn btn-ghost btn-sm" href="pricing.html">See plans</a></div>`;
 }
 function scrollEnd(smooth) { const t = $("thread"); t.scrollTo({ top: t.scrollHeight, behavior: smooth ? "smooth" : "auto" }); }
 
@@ -983,9 +983,8 @@ function checkCardHtml(part) {
   const cur = S.checkProc || "cnc", saved = part.checks || {};
   const label = (CHECK_PROCESSES.find((p) => p[0] === cur) || CHECK_PROCESSES[0])[2];
   const chips = CHECK_PROCESSES.map(([id, short]) => `<button class="chip${id === cur ? " on" : ""}" data-proc="${id}">${short}${saved[id] ? " · done" : ""}</button>`).join("");
-  const cost = Number.isFinite(S.ai && S.ai.check_credits) ? S.ai.check_credits : 5;   // the server charges this once per version and process
   const body = saved[cur] ? reportHtml(saved[cur])
-    : `<p>Checks this version against general rules for ${label}, such as wall thickness, corners, holes, draft or overhangs. It reads the part's mesh and dimensions. Guidance only, not a certified review.</p><button class="btn btn-primary btn-sm" data-check="${cur}">Run check · ${cost} credits</button>`;
+    : `<p>Checks this version against general rules for ${label}, such as wall thickness, corners, holes, draft or overhangs. It reads the part's mesh and dimensions. Guidance only, not a certified review.</p><button class="btn btn-primary btn-sm" data-check="${cur}">Run check</button>`;
   return `<div class="check-card"><div class="kick">Manufacturability check</div><div class="followups">${chips}</div>${body}</div>`;
 }
 /* The Specs-tab section for an assembly: its parts with positions and mass, then the findings.
@@ -1414,9 +1413,9 @@ $("threadInner").addEventListener("click", (e) => {
 function setBalance(b) { S.balance = b; refreshBalance(); }
 function renderMeter() {
   const m = S.meter, chip = $("creditChip"), pct = m && m.used_pct != null ? m.used_pct : null;
-  $("creditNum").textContent = pct == null ? "AI" : pct + "%";
+  $("creditNum").textContent = pct == null ? "Usage" : pct + "% used";
   chip.classList.toggle("low", pct != null && pct >= 90);
-  chip.setAttribute("aria-label", pct == null ? "AI usage" : "AI usage " + pct + " percent used");
+  chip.setAttribute("aria-label", pct == null ? "Usage" : "Usage " + pct + " percent used");
 }
 async function refreshBalance() { S.meter = await Backend.meter(); renderMeter(); }
 /* ============================================================ templates */
@@ -1454,7 +1453,7 @@ async function openCredits() {
   try { cfg = DEMO ? { credit_price_bot: 0.01, pack_1000_price_bot: 1, pack_1000_credits: 1000, pack_10000_price_bot: 10, pack_10000_credits: 10000 } : await Auth.getChainConfig(); } catch (e) { toast("Could not load pricing. Try again shortly."); return; }
   const tiers = [["single", "Small boost", cfg.credit_price_bot], ["pack_1000", "Medium boost", cfg.pack_1000_price_bot], ["pack_10000", "Large boost", cfg.pack_10000_price_bot]];
   const m = document.createElement("div"); m.className = "modal"; m.setAttribute("role", "dialog"); m.setAttribute("aria-modal", "true");
-  m.innerHTML = `<div class="modal-card"><h3>Add AI usage</h3><p>Paid in native BOT on BOT Chain. A boost adds AI usage on top of your plan and never expires. Every export format is included. Prefer a subscription? See <a href="pricing.html">plans</a>.</p>` +
+  m.innerHTML = `<div class="modal-card"><h3>Add usage</h3><p>Paid in native BOT on BOT Chain. A boost adds usage on top of your plan and never expires. Every export format is included. Prefer a subscription? See <a href="pricing.html">plans</a>.</p>` +
     tiers.map(([id, label, price]) => `<div class="tier"><div><b>${label}</b><span>${price} BOT</span></div><button class="btn btn-primary btn-sm" data-tier="${id}">Buy</button></div>`).join("") +
     `<div class="modal-foot"><button class="btn btn-ghost btn-sm" data-close>Close</button></div></div>`;
   document.body.appendChild(m);
@@ -1686,8 +1685,8 @@ const DEMO_AI = { plan: "pro", default: "basic:deepseek", tiers: [
   { id: "advanced", label: "Advanced", messages_per_day: null, messages_left: null, models: [{ id: "advanced:claude", label: "Claude", class: "expert", available: true, locked: true, requires_plan: "max" }] }
 ] };
 try { S.model = localStorage.getItem("nitocad_studio_model") || "basic:deepseek"; } catch (e) { S.model = "basic:deepseek"; }
-/* People pick a class, not a provider. Plus holds the Expert model, Advanced the most capable one. */
-const TIER_NAME = { engine: "No AI", basic: "Standard", plus: "Expert", advanced: "Expert Max" };
+/* People pick a plain level, not a provider: Engine, Basic, Standard or Advanced. */
+const TIER_NAME = { engine: "Engine", basic: "Basic", plus: "Standard", advanced: "Advanced" };
 const tierName = (t) => TIER_NAME[t.id] || t.label;
 const modelOk = (t, m) => !!m && m.available && !m.locked && (t.id !== "plus" || m.class !== "standard");
 const pickModel = (t) => t.models.find((m) => modelOk(t, m));
