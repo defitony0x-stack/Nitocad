@@ -21,15 +21,15 @@ html[data-theme="dark"]{
   color-scheme:dark;
   --ink:#FBF8FF;
   --ink-soft:#E8E4FF;
-  --paper:#3A32A6;
-  --fog:#4A3FBF;
-  --line:#8A7FF0;
+  --paper:#4A4FAE;
+  --fog:#5560BC;
+  --line:#A79BDD;
   --orange:#F2490F;
   --dot:#FF5A1F;
   --orange-deep:#F2EEFF;
   --gold:#D9B65F;
-  --surface:#2E2689;
-  --deep:#241D78;
+  --surface:#2F2F7E;
+  --deep:#262A6E;
   --botchain-bright-deep:#3FD6A8;
 }
 
@@ -51,8 +51,8 @@ html[data-theme="dark"] .wp-note,
 html[data-theme="dark"] .wp-toc,
 html[data-theme="dark"] .prov-pill{background:var(--surface);}
 html[data-theme="dark"] .demo-bar{background:var(--fog);}
-html[data-theme="dark"] .demo-warn{background:rgba(180,170,255,.12);}
-html[data-theme="dark"] header{background:rgba(40,32,125,.88);}
+html[data-theme="dark"] .demo-warn{background:rgba(200,185,235,.12);}
+html[data-theme="dark"] header{background:rgba(50,50,125,.88);}
 
 /* form controls */
 html[data-theme="dark"] input,
@@ -75,17 +75,17 @@ html[data-theme="dark"] .wp-table thead th{color:var(--ink);}
 html[data-theme="dark"] .wp-rule{color:var(--ink) !important;}
 html[data-theme="dark"] .draft{background:#2A2312;border-color:#5C4C1E;color:#E6CF8A;}
 html[data-theme="dark"] .part-more{color:var(--ink-soft);}
-html[data-theme="dark"] .parts button{color:var(--ink);border-color:#A89FF5;}
+html[data-theme="dark"] .parts button{color:var(--ink);border-color:#B9B2E6;}
 
 /* var(--ink) was used as a dark panel color, so pin those panels */
 html[data-theme="dark"] .audience,
 html[data-theme="dark"] .pricing{background:var(--deep);}
-html[data-theme="dark"] .rig{background:#281F7E;}
-html[data-theme="dark"] .svc.core{background:var(--deep);border-color:#8A7FF0;}
+html[data-theme="dark"] .rig{background:#2A2B76;}
+html[data-theme="dark"] .svc.core{background:var(--deep);border-color:#A79BDD;}
 html[data-theme="dark"] .chat-bubble.user,
-html[data-theme="dark"] .wp-steps>li::before{background:#6A55E0;color:#fff;}
+html[data-theme="dark"] .wp-steps>li::before{background:#6C64C8;color:#fff;}
 html[data-theme="dark"] .btn-ghost:hover,
-html[data-theme="dark"] .wp-btn-ghost:hover{background:var(--ink);border-color:var(--ink);color:#241D78;}
+html[data-theme="dark"] .wp-btn-ghost:hover{background:var(--ink);border-color:var(--ink);color:#262A6E;}
 html[data-theme="dark"] .wp-timeline>li::before{background:var(--paper);}
 
 /* the 3D viewport keeps its light scene so models stay readable */
@@ -99,7 +99,7 @@ html[data-theme="dark"] .spec,
 html[data-theme="dark"] .demo-shell,
 html[data-theme="dark"] .rig{box-shadow:none;}
 
-html[data-theme="dark"] .wp-hero{background:linear-gradient(180deg,#3A32A0 0%,var(--paper) 100%);}
+html[data-theme="dark"] .wp-hero{background:linear-gradient(180deg,#4A4FAE 0%,var(--paper) 100%);}
 html[data-theme="dark"] .wp-btn-ghost{color:var(--ink);border-color:var(--ink);}
 
 /* white paper status tags */
@@ -114,30 +114,30 @@ html[data-theme="dark"] .tag-miss{background:rgba(240,100,85,.14);color:#FF9A8C;
 
 /* ---------- navy-black tint and soft glow (Mobi style) ---------- */
 html[data-theme="dark"]{
-  --glow-purple:rgba(160,90,235,.55);
-  --glow-pink:rgba(240,120,200,.42);
-  --glow-blue:rgba(110,110,255,.50);
+  --glow-purple:rgba(150,110,200,.55);
+  --glow-pink:rgba(226,150,190,.42);
+  --glow-blue:rgba(129,136,204,.50);
 }
 
 /* dark feature panels: navy-black with a purple, pink and blue glow in the lower right */
 html[data-theme="dark"] .audience,
 html[data-theme="dark"] .pricing,
 html[data-theme="dark"] .svc.core{
-  background-color:#241D78;
+  background-color:#262A6E;
   background-image:
     radial-gradient(60% 70% at 88% 108%,var(--glow-blue) 0%,transparent 62%),
     radial-gradient(55% 65% at 100% 62%,var(--glow-pink) 0%,transparent 66%),
     radial-gradient(60% 70% at 78% 78%,var(--glow-purple) 0%,transparent 70%);
   background-repeat:no-repeat;
 }
-html[data-theme="dark"] .svc.core{border-color:#8A7FF0;}
+html[data-theme="dark"] .svc.core{border-color:#A79BDD;}
 
 /* hero: faint colour bloom behind the content */
 html[data-theme="dark"] .hero-v2{
   background-image:
-    radial-gradient(46% 62% at 88% 8%,rgba(170,100,240,.30) 0%,transparent 70%),
-    radial-gradient(40% 55% at 10% 0%,rgba(110,110,255,.20) 0%,transparent 70%),
-    radial-gradient(38% 50% at 70% 100%,rgba(240,120,200,.16) 0%,transparent 70%);
+    radial-gradient(46% 62% at 88% 8%,rgba(165,125,205,.30) 0%,transparent 70%),
+    radial-gradient(40% 55% at 10% 0%,rgba(129,136,204,.20) 0%,transparent 70%),
+    radial-gradient(38% 50% at 70% 100%,rgba(226,150,190,.16) 0%,transparent 70%);
   background-repeat:no-repeat;
 }
 
@@ -149,28 +149,28 @@ html[data-theme="dark"] .step,
 html[data-theme="dark"] .job-card,
 html[data-theme="dark"] .price-peek,
 html[data-theme="dark"] .wp-card{
-  background-color:#2E2689;
-  background-image:radial-gradient(70% 90% at 100% 0%,rgba(170,110,245,.16) 0%,rgba(240,120,200,.07) 45%,transparent 72%);
+  background-color:#2F2F7E;
+  background-image:radial-gradient(70% 90% at 100% 0%,rgba(165,125,205,.16) 0%,rgba(226,150,190,.07) 45%,transparent 72%);
   background-repeat:no-repeat;
-  border-color:#8A7FF0;
+  border-color:#A79BDD;
 }
 
 /* whitepaper hero */
 html[data-theme="dark"] .wp-hero{
   background:
-    radial-gradient(50% 80% at 85% 0%,rgba(170,100,240,.30) 0%,transparent 70%),
-    radial-gradient(40% 70% at 12% 10%,rgba(110,110,255,.18) 0%,transparent 70%),
-    #3A32A6;
+    radial-gradient(50% 80% at 85% 0%,rgba(165,125,205,.30) 0%,transparent 70%),
+    radial-gradient(40% 70% at 12% 10%,rgba(129,136,204,.18) 0%,transparent 70%),
+    #4A4FAE;
 }
 
 /* inputs and chips pick up the navy tint */
 html[data-theme="dark"] input,
 html[data-theme="dark"] textarea,
-html[data-theme="dark"] select{background:#2E2689;border-color:#8A7FF0;}
-html[data-theme="dark"] header{background:rgba(40,32,125,.85);}
-html[data-theme="dark"] .rig{background:#281F7E;}
+html[data-theme="dark"] select{background:#2F2F7E;border-color:#A79BDD;}
+html[data-theme="dark"] header{background:rgba(50,50,125,.85);}
+html[data-theme="dark"] .rig{background:#2A2B76;}
 
 html[data-theme="dark"] .hero-status li{background:var(--surface);}
 
 /* page background: the lock screen sky, indigo to periwinkle with a pink glow */
-html[data-theme="dark"] body{background:radial-gradient(60% 38% at 92% 10%,rgba(240,120,200,.50) 0%,transparent 70%),radial-gradient(70% 40% at 6% 58%,rgba(110,110,255,.45) 0%,transparent 70%),linear-gradient(180deg,#2B2A8C 0%,#4338C4 38%,#6A4DD0 72%,#3A32A6 100%) fixed;background-color:#3A32A6;}
+html[data-theme="dark"] body{background:radial-gradient(55% 32% at 72% 16%,rgba(226,206,238,.38) 0%,transparent 70%),radial-gradient(70% 36% at 8% 62%,rgba(129,136,204,.40) 0%,transparent 70%),linear-gradient(180deg,#5A3F96 0%,#8A5FB0 26%,#6C6AC0 52%,#4D5AB5 78%,#363777 100%) fixed;background-color:#4A4FAE;}

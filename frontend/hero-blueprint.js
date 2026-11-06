@@ -1,5 +1,5 @@
 /* NitoCAD hero: a blueprint that draws itself stroke by stroke, then lifts into a solid.
-   Eighteen swappable scenes: a light aircraft, a two-storey house, two complete engines (inline-4, single-cylinder), crankshaft, camshaft and machined parts (gear, bracket, flange, shaft, bearing, pulley, piston, con-rod, brake disc, spring, bolt, enclosure). Uses the same three.js build the page already
+   Sixteen swappable scenes: two complete engines (inline-4, single-cylinder), crankshaft, camshaft and machined parts (gear, bracket, flange, shaft, bearing, pulley, piston, con-rod, brake disc, spring, bolt, enclosure). Uses the same three.js build the page already
    loads through its import map, so it adds no new network dependency.
    Pauses when off-screen or in a background tab, and respects prefers-reduced-motion. */
 import * as THREE from "three";
@@ -767,81 +767,7 @@ function boot() {
     };
   }
 
-
-  /* ---------- light aircraft and two-storey house (1 unit = 1 m) ---------- */
-  function buildAirplane(cut) {
-    TEXBY.clear(); GLOSSY.clear();
-    const SK = 0xe4e8ee, o = { r: 0.5, m: 0.25 }, flat = [-Math.PI / 2, 0, 0], H = Math.PI / 2;
-    const ctrl = [[0, 0], [0.45, 0.35], [0.8, 1.2], [0.9, 2.6], [0.8, 4.2], [0.55, 6.2], [0.28, 8.0], [0.1, 9.0]];
-    const P = [
-      lathePart("Fuselage", ctrl, SK, Object.assign({ segs: 36, long: 12, pos: [0, 1.3, 0], rot: [0, 0, -H] }, o)),
-      mk("Wing", planform([[2.2, 0.85], [2.9, 5.6], [3.5, 5.6], [4.0, 0.85], [4.0, -0.85], [3.5, -5.6], [2.9, -5.6], [2.2, -0.85]], 0.14), 0xcfd6de, Object.assign({ rot: flat, pos: [0, 1.05, 0] }, o)),
-      mk("Horizontal tail", planform([[7.6, 0.5], [8.1, 2.1], [8.6, 2.1], [8.8, 0.5], [8.8, -0.5], [8.6, -2.1], [8.1, -2.1], [7.6, -0.5]], 0.08), 0xcfd6de, Object.assign({ rot: flat, pos: [0, 1.3, 0] }, o)),
-      mk("Vertical fin", extrude(polyShape([[7.2, 1.4], [8.9, 1.4], [8.7, 3.0], [8.0, 3.0]]), 0.08), 0xd7dde5, Object.assign({ pos: [0, 0, -0.04] }, o)),
-      mk("Canopy", new THREE.SphereGeometry(1, 24, 14), 0x8db8dd, { r: 0.1, m: 0.3, angle: 20, scl: [1.25, 0.5, 0.62], pos: [2.0, 1.95, 0] }),
-      mk("Propeller", new THREE.BoxGeometry(0.1, 2.1, 0.22), 0x3a3d44, { r: 0.5, m: 0.3, pos: [-0.08, 1.3, 0] }),
-      mk("Spinner hub", new THREE.CylinderGeometry(0.16, 0.16, 0.14, 20), 0x3a3d44, { r: 0.5, m: 0.3, rot: [0, 0, H], pos: [-0.02, 1.3, 0] })
-    ];
-    [-1.3, 1.3].forEach((z) => {
-      P.push(mk("Main wheel", new THREE.CylinderGeometry(0.32, 0.32, 0.18, 24), 0x2b2d33, { r: 0.8, rot: [H, 0, 0], pos: [3.0, 0.32, z] }));
-      P.push(mk("Main strut", new THREE.BoxGeometry(0.08, 0.7, 0.08), 0x9aa1ab, { r: 0.5, m: 0.5, pos: [3.0, 0.65, z * 0.85] }));
-    });
-    P.push(mk("Nose wheel", new THREE.CylinderGeometry(0.24, 0.24, 0.14, 24), 0x2b2d33, { r: 0.8, rot: [H, 0, 0], pos: [0.9, 0.24, 0] }));
-    P.push(mk("Nose strut", new THREE.BoxGeometry(0.07, 0.7, 0.07), 0x9aa1ab, { r: 0.5, m: 0.5, pos: [0.9, 0.6, 0] }));
-    return {
-      parts: P, clip: halfCut(cut), focus: null, gridStep: 1, partCount: 11,
-      dims: (box) => cat(
-        dim([0, 0, box.max.z + 0.8], [9, 0, box.max.z + 0.8], [0, 0, 1], 0.3),
-        dim([box.max.x + 0.8, 0, -5.6], [box.max.x + 0.8, 0, 5.6], [1, 0, 0], 0.3)),
-      groundOffset: 0.0
-    };
-  }
-
-  function buildHouse(cut) {
-    TEXBY.clear(); GLOSSY.clear();
-    const flat = [-Math.PI / 2, 0, 0], WALL = 0xdcd6c9, o = { r: 0.8, m: 0.0 };
-    const shell = () => { const s = polyShape(rectPts(-5, -4, 5, 4)); s.holes.push(pathOf(rectPts(-4.8, -3.8, 4.8, 3.8))); return s; };
-    const slab = polyShape(rectPts(-5.1, -4.1, 5.1, 4.1)); slab.holes.push(pathOf(rectPts(2.2, -3.6, 4.4, -1.2)));   // stair opening
-    const roof = polyShape([[-5.5, 0], [5.5, 0], [0, 2.8]]); roof.holes.push(pathOf([[-4.6, 0.12], [4.6, 0.12], [0, 2.35]]));
-    const P = [
-      mk("Foundation slab", new THREE.BoxGeometry(10.6, 0.4, 8.6), 0x9b9fa6, { r: 0.9, pos: [0, 0.2, 0] }),
-      mk("Ground floor walls", extrude(shell(), 2.8), WALL, Object.assign({ rot: flat, pos: [0, 0.4, 0] }, o)),
-      mk("First floor slab", extrude(slab, 0.25), 0xb9b3a6, Object.assign({ rot: flat, pos: [0, 3.2, 0] }, o)),
-      mk("Upper floor walls", extrude(shell(), 2.8), WALL, Object.assign({ rot: flat, pos: [0, 3.45, 0] }, o)),
-      mk("Roof", extrude(roof, 9.0), 0x8a4b3c, { r: 0.85, pos: [0, 6.25, -4.5] }),
-      mk("Chimney", new THREE.BoxGeometry(0.9, 2.2, 0.9), 0x9a5b45, { r: 0.9, pos: [3.0, 7.9, -1.0] }),
-      mk("Front door", new THREE.BoxGeometry(1.1, 2.1, 0.12), 0x7a5a3a, { r: 0.7, pos: [-2.5, 1.45, 4.05] })
-    ];
-    const GL = { r: 0.1, m: 0.3 }, G = 0x8db8dd;
-    [[0.6, 1.9], [3.2, 1.9]].forEach(([x, y]) => { P.push(mk("Window", new THREE.BoxGeometry(1.4, 1.2, 0.12), G, Object.assign({ pos: [x, y, 4.05] }, GL))); P.push(mk("Window", new THREE.BoxGeometry(1.4, 1.2, 0.12), G, Object.assign({ pos: [x, y, -4.05] }, GL))); });
-    [-3, 0, 3].forEach((x) => { P.push(mk("Window", new THREE.BoxGeometry(1.4, 1.2, 0.12), G, Object.assign({ pos: [x, 4.95, 4.05] }, GL))); P.push(mk("Window", new THREE.BoxGeometry(1.4, 1.2, 0.12), G, Object.assign({ pos: [x, 4.95, -4.05] }, GL))); });
-    [-5.05, 5.05].forEach((x) => P.push(mk("Window", new THREE.BoxGeometry(0.12, 1.2, 1.4), G, Object.assign({ pos: [x, 4.95, 0] }, GL))));
-    return {
-      parts: P, clip: halfCut(cut), focus: null, gridStep: 1, partCount: 20,
-      dims: (box) => cat(
-        dim([-5, 0, box.max.z + 1.0], [5, 0, box.max.z + 1.0], [0, 0, 1], 0.3),
-        dim([box.max.x + 1.0, 0, 0], [box.max.x + 1.0, box.max.y, 0], [1, 0, 0], 0.3)),
-      groundOffset: 0.0
-    };
-  }
-
   const SCENES = [
-    {
-      id: "airplane", label: "Airplane", build: buildAirplane, unit: "m", partCount: 11,
-      prompt: "Light aircraft, 11.2 m wingspan, 9 m long, tricycle landing gear",
-      alt: "A light aircraft drawn as a blueprint line by line, then turning into a solid 3D model",
-      envelope: "length × span × height",
-      cam: { from: { az: 0.0, el: 0.9 }, to: { az: 0.7, el: 0.3 } },
-      camCut: { from: { az: 0.0, el: 0.9 }, to: { az: 0.25, el: 0.3 } }
-    },
-    {
-      id: "house", label: "House", build: buildHouse, unit: "m", partCount: 20,
-      prompt: "Two-storey house, 10 x 8 m, gable roof, stair opening, front door and eleven windows",
-      alt: "A two-storey house drawn as a blueprint line by line, then turning into a solid 3D model",
-      envelope: "width × depth × height",
-      cam: { from: { az: 0.0, el: 0.9 }, to: { az: 0.65, el: 0.35 } },
-      camCut: { from: { az: 0.0, el: 0.9 }, to: { az: 0.25, el: 0.35 } }
-    },
     {
       id: "engine-4", label: "Inline-4 engine", build: buildEngine4, unit: "mm", partCount: 26,
       prompt: "Inline-4 engine, 80 mm bore, 80 mm stroke, 100 mm bore pitch, 150 mm connecting rods",
@@ -971,7 +897,7 @@ function boot() {
       camCut: { from: { az: 0.2, el: 1.0 }, to: { az: 0.25, el: 0.5 } }
     }
   ];
-  { const ORDER = ["airplane","house","gear","engine-4","engine-1","crankshaft","camshaft","piston","conrod","bearing","pulley","brake-disc","flange","shaft","bracket","spring","bolt","enclosure"]; SCENES.sort((a, b) => ORDER.indexOf(a.id) - ORDER.indexOf(b.id)); }
+  { const ORDER = ["gear","engine-4","engine-1","crankshaft","camshaft","piston","conrod","bearing","pulley","brake-disc","flange","shaft","bracket","spring","bolt","enclosure"]; SCENES.sort((a, b) => ORDER.indexOf(a.id) - ORDER.indexOf(b.id)); }
 
   /* ---------- runtime state ---------- */
   const cutBtn = document.getElementById("bpCut");
