@@ -1253,7 +1253,7 @@ import { applyRealisticLook, prepareStlGeometry, buildPartObject } from "./viewe
   function initViewer(){
     const w = viewerEl.clientWidth || 600, h = viewerEl.clientHeight || 340;
     scene = new THREE.Scene();
-    scene.background = new THREE.Color(0xE7E4F8);
+    scene.background = new THREE.Color(0xE4E4E2);
     camera = new THREE.PerspectiveCamera(45, w / h, 0.1, 2000);
     camera.position.set(90, 80, 90);
     renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -1266,7 +1266,7 @@ import { applyRealisticLook, prepareStlGeometry, buildPartObject } from "./viewe
     dl.position.set(60, 90, 50);
     scene.add(dl);
     applyRealisticLook(scene, renderer, dl);   // studio lighting, soft shadow, filmic tone mapping
-    scene.add(new THREE.GridHelper(120, 12, 0xB9B2E2, 0xD6D1F0));
+    scene.add(new THREE.GridHelper(120, 12, 0xa8a8ab, 0xc9c9cc));
   }
   function loop(){
     if (!running) return;
