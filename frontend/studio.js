@@ -1272,6 +1272,16 @@ async function recoverTurn(c, knownCount) {
   }
   return null;
 }
+/* Instant replies for small talk. Anything that looks like a part request goes to the server as before. */
+function smallTalkReply(text) {
+  const t = text.toLowerCase().replace(/[^a-z\s]/g, " ").replace(/\s+/g, " ").trim();
+  if (!t || t.split(" ").length > 4) return "";
+  if (/^(hi+|hey+|hello+|helo|hola|yo|sup|howdy|good (morning|afternoon|evening)|hey there|hi there|hello there)$/.test(t))
+    return "Hey! Tell me what part you want to make, with sizes if you have them. For example: a 60 mm flange with four 6 mm bolt holes. You can also attach a file to start from.";
+  if (/^(thanks?|thank you|thx|ty|cheers|ok|okay|cool|nice|great|perfect|got it)$/.test(t))
+    return "You are welcome. Tell me what to change, or describe another part.";
+  return "";
+}
 async function send(text, templateId, importId) {
   text = (text || "").trim();
   if (!text || S.busy) return;
@@ -1281,6 +1291,16 @@ async function send(text, templateId, importId) {
   if (c.title === "New design") c.title = text.length > 44 ? text.slice(0, 42).trim() + "..." : text;
   c.updatedAt = Date.now();
   if (!templateId && !importId) { $("input").value = ""; autosize(); }
+  /* Plain greetings and thanks get an instant local answer: no server round trip, no wait, no credits. */
+  if (!templateId && !importId) {
+    const quick = smallTalkReply(text);
+    if (quick) {
+      c.messages.push({ id: uid(), role: "assistant", text: quick, local: true });
+      c.updatedAt = Date.now(); save(); renderThread(); renderSide(); $("chatTitle").textContent = c.title; scrollEnd(true);
+      $("send").disabled = !$("input").value.trim();
+      return;
+    }
+  }
   $("send").disabled = true;
   S.busy = true; renderThread(); renderSide(); $("chatTitle").textContent = c.title; scrollEnd(false); showWorking();
   let out;
@@ -1294,7 +1314,7 @@ async function send(text, templateId, importId) {
     if (!out) out = importId ? await Backend.startImport({ chat: c, importId }) : templateId ? await Backend.applyTemplate({ chat: c, id: templateId, text }) : await Backend.send({ chat: c, text });
   } catch (e) { out = { reply: "Something went wrong on my side. Please try again.", error: true }; }
   if (out.error && c.remote && [0, 409, 502, 503, 504].includes(out.status)) {
-    const known = c.messages.length - 1;   // server messages before this one; the failed user message is the last local entry
+    const known = c.messages.filter((m) => !m.local).length - 1;   // server messages before this one; the failed user message is the last local entry
     const back = await recoverTurn(c, known);
     if (back && back.recovered) {
       hideWorking(); S.busy = false;
