@@ -26,8 +26,9 @@ const Backend = {
      everything. Returns { reply, part?, needCredits?, balance?, authExpired?, error? }. */
   async send({ chat, text }) {
     if (DEMO) return Demo.send(text, lastPart(chat));
-    let r = await api("POST", `/chats/${chat.id}/messages`, { content: text, ...(S.model ? { model: S.model } : {}) });
-    if (!r.ok && r.status === 422) r = await api("POST", `/chats/${chat.id}/messages`, { content: text });   // an older server that does not take "model"
+    const live = { token: workToken, status: workStatus };
+    let r = await apiStream("POST", `/chats/${chat.id}/messages`, { content: text, ...(S.model ? { model: S.model } : {}) }, live);
+    if (!r.ok && r.status === 422) r = await apiStream("POST", `/chats/${chat.id}/messages`, { content: text }, live);   // an older server that does not take "model"
     if (r.authExpired) return { authExpired: true };
     if (!r.ok) {
       const msg = r.status === 409 ? "I am still working on your last message. Give me a moment."
@@ -224,6 +225,63 @@ async function api(method, path, body, ms) {
   }
   return { ok: res.ok, status: res.status, data, detail };
 }
+/* Same as api() for a chat turn, but if the server answers as a stream (Server-Sent Events) the reply is shown live.
+   Events: token {text}, status {text}, done {...same body as the normal JSON reply...}, error {detail, status}.
+   A server that answers with plain JSON works exactly as before. */
+async function apiStream(method, path, body, on) {
+  const s = Auth.getSession();
+  if (!s) return { authExpired: true };
+  const ctl = new AbortController(); let timer = 0;
+  const arm = () => { clearTimeout(timer); timer = setTimeout(() => ctl.abort(), 170000); };
+  arm();
+  let res;
+  try {
+    res = await fetch(BASE + path, { method, body: JSON.stringify(body), signal: ctl.signal,
+      headers: { Authorization: "Bearer " + s.session_id, "Content-Type": "application/json", Accept: "text/event-stream, application/json" } });
+  } catch (e) {
+    clearTimeout(timer);
+    return { ok: false, status: 0, detail: e && e.name === "AbortError"
+      ? "This is taking much longer than usual, so I stopped waiting. The build may still be running. Open this chat again in a minute, or try a simpler version of the part."
+      : "I could not reach the server. Check your connection and try again." };
+  }
+  if (res.status === 401) { clearTimeout(timer); return { authExpired: true }; }
+  const type = res.headers.get("content-type") || "";
+  if (res.ok && type.includes("text/event-stream") && res.body) {
+    const reader = res.body.getReader(), dec = new TextDecoder();
+    let buf = "", text = "", final = null, failed = null;
+    const handle = (block) => {
+      let ev = "message", data = "";
+      block.split("\n").forEach((ln) => { if (ln.startsWith("event:")) ev = ln.slice(6).trim(); else if (ln.startsWith("data:")) data += ln.slice(5).trim(); });
+      if (!data) return;
+      let d; try { d = JSON.parse(data); } catch (e) { return; }
+      if (ev === "token" && d.text) { text += d.text; if (on && on.token) on.token(d.text); }
+      else if (ev === "status" && d.text) { if (on && on.status) on.status(d.text); }
+      else if (ev === "done") final = d;
+      else if (ev === "error") failed = d;
+    };
+    try {
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        arm();
+        buf += dec.decode(value, { stream: true });
+        let i;
+        while ((i = buf.indexOf("\n\n")) >= 0) { handle(buf.slice(0, i)); buf = buf.slice(i + 2); }
+      }
+      if (buf.trim()) handle(buf);
+    } catch (e) { clearTimeout(timer); return { ok: false, status: 0, detail: "The connection dropped while I was answering." }; }
+    clearTimeout(timer);
+    if (failed) return { ok: false, status: failed.status || 500, detail: errText(failed.detail) || "Something went wrong building that." };
+    if (!final) return { ok: false, status: 0, detail: "The connection dropped while I was answering." };   // the build may still finish, so the caller looks for it
+    if (!final.assistant_message) final.assistant_message = { content: text };
+    return { ok: true, status: res.status, data: final, detail: "" };
+  }
+  clearTimeout(timer);
+  let data = null; try { data = await res.json(); } catch (e) { /* empty body */ }
+  let detail = errText(data && (data.detail || data.error || data.message));
+  if (!res.ok) { console.warn("NitoCAD API", method, path, res.status, data); if (!detail) detail = `The server answered ${res.status}. Please try again.`; }
+  return { ok: res.ok, status: res.status, data, detail };
+}
 /* A readable line from whatever the server put in "detail": text, a list of validation errors, or an object. */
 function errText(d) {
   if (!d) return "";
@@ -315,7 +373,7 @@ const Demo = {
 };
 
 /* ============================================================ state + storage */
-const S = { chats: [], activeId: null, activePartId: null, busy: false, balance: null, tab: "specs" };
+const S = { chats: [], queue: [], activeId: null, activePartId: null, busy: false, balance: null, tab: "specs" };
 let storeKey = "nitocad_studio_v1:guest";
 function userKey() { const s = Auth.getSession(); return DEMO ? "demo" : (s ? (s.email || s.wallet_address || "user") : "guest"); }
 async function load() {
@@ -651,6 +709,7 @@ function followupsHtml(part) {
 }
 function renderThread(animateLast) {
   const inner = $("threadInner"), c = chat();
+  const live = $("working");   // a turn in progress keeps its indicator when the list is redrawn
   if (!c || !c.messages.length) {
     closeLiveCard();
     inner.innerHTML = `<div class="hello"><div class="mark"><img src="logo-mark.png" alt=""></div><h1>What are we building?</h1>` +
@@ -660,7 +719,7 @@ function renderThread(animateLast) {
   }
   const latest = lastPart(c);
   inner.innerHTML = c.messages.map((m) => {
-    if (m.role === "user") return `<div class="msg user"><div class="bubble">${esc(m.text)}</div></div>`;
+    if (m.role === "user") return `<div class="msg user${m.queued && S.queue.some((q) => q.msg === m) ? " queued" : ""}"><div class="bubble">${esc(m.text)}</div></div>`;
     if (m.fileCard) return `<div class="msg">${ASSIST_AVA}<div class="reply" data-mid="${m.id}">${fileCardHtml(m)}</div></div>`;
     const part = m.partId ? partOf(c, m.partId) : null;
     let extra = "";
@@ -671,6 +730,7 @@ function renderThread(animateLast) {
     if (m.retry && m === c.messages[c.messages.length - 1]) extra += `<div class="followups"><button class="chip" data-retry="${m.id}">Try again</button></div>`;
     return `<div class="msg">${ASSIST_AVA}<div class="reply" data-mid="${m.id}">${para(m.text)}${extra}</div></div>`;
   }).join("");
+  if (live) inner.appendChild(live);
   mountCardViewers(c);
 }
 
@@ -905,21 +965,38 @@ function needCreditsHtml() {
 }
 function scrollEnd(smooth) { const t = $("thread"); t.scrollTo({ top: t.scrollHeight, behavior: smooth ? "smooth" : "auto" }); }
 
-/* working indicator: three bouncing dots, like a chat app "thinking" state */
-let workTimer = 0, workTimer2 = 0;
-function showWorking(steps, waitText) {
+/* working indicator: three bouncing dots, like a chat app "thinking" state.
+   If the server streams, the dots give way to the reply as it is written, and a one-line status says what is being built. */
+let workTimers = [], workText = "", workLive = false;
+function showWorking() {
   const inner = $("threadInner");
-  waitText = waitText || "Still building. Detailed parts can take a minute or two.";
+  workText = ""; workLive = false;
   const el = document.createElement("div"); el.className = "msg"; el.id = "working";
   el.setAttribute("role", "status"); el.setAttribute("aria-label", "Thinking");
-  el.innerHTML = ASSIST_AVA + '<div class="reply"><div class="thinking"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div><div class="think-note" hidden></div></div>';
+  el.innerHTML = ASSIST_AVA + '<div class="reply"><div class="thinking"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div><div class="stream-text" hidden></div><div class="think-note" hidden></div></div>';
   inner.appendChild(el); scrollEnd(true);
   const note = el.querySelector(".think-note");
-  clearTimeout(workTimer); clearTimeout(workTimer2);
-  workTimer = setTimeout(() => { if (note.isConnected) { note.textContent = waitText; note.hidden = false; } }, 12000);
-  workTimer2 = setTimeout(() => { if (note.isConnected) { note.textContent = "This one is taking longer than usual. You can keep waiting."; note.hidden = false; } }, 60000);
+  const later = (ms, t) => workTimers.push(setTimeout(() => { if (!workLive && note.isConnected) { note.textContent = t; note.hidden = false; } }, ms));
+  workTimers.forEach(clearTimeout); workTimers = [];
+  later(12000, "Still thinking.");
+  later(35000, "Still working. Detailed parts can take a minute or two.");
+  later(90000, "This one is taking longer than usual. You can keep waiting, or keep typing and I will pick it up.");
 }
-function hideWorking() { clearTimeout(workTimer); clearTimeout(workTimer2); const w = $("working"); if (w) w.remove(); }
+function workToken(t) {
+  const el = $("working"); if (!el) return;
+  workLive = true; workText += t;
+  const box = el.querySelector(".stream-text"), dots = el.querySelector(".thinking");
+  box.innerHTML = para(workText); box.hidden = false; dots.hidden = true;
+  scrollEnd(false);
+}
+function workStatus(t) {
+  const el = $("working"); if (!el) return;
+  workLive = true;
+  const note = el.querySelector(".think-note");
+  note.textContent = t.replace(/[.\u2026]+$/, ""); note.classList.add("live"); note.hidden = false;
+  if (!workText) el.querySelector(".thinking").hidden = false;
+}
+function hideWorking() { workTimers.forEach(clearTimeout); workTimers = []; const w = $("working"); if (w) w.remove(); }
 
 /* ============================================================ rendering: canvas */
 function renderCanvas() {
@@ -1257,7 +1334,7 @@ const sleepMs = (ms) => new Promise((r) => setTimeout(r, ms));
 async function recoverTurn(c, knownCount) {
   if (DEMO || !c.remote) return null;
   const row = document.querySelector("#working .think-note");
-  if (row) { row.textContent = "Checking whether the build finished..."; row.hidden = false; }
+  if (row) { row.textContent = "Checking whether the build finished"; row.classList.add("live"); row.hidden = false; }
   for (let i = 0; i < 30; i++) {
     await sleepMs(i < 3 ? 2500 : 5000);
     const r = await api("GET", `/chats/${c.id}`, null, 20000);
@@ -1272,36 +1349,64 @@ async function recoverTurn(c, knownCount) {
   }
   return null;
 }
-/* Instant replies for small talk. Anything that looks like a part request goes to the server as before. */
+/* Instant replies for small talk, so hello, thanks and "what can you do" never wait on the server.
+   Anything that mentions a number, a size or a part goes to the server as before. */
+const BUILD_WORDS = /\d|\b(make|build|create|design|generate|draw|model|modify|change|edit|resize|add|remove|part|plate|bracket|flange|gear|shaft|bolt|nut|screw|hole|pipe|tube|box|cube|cylinder|sphere|cone|assembly|house|building|storey|story|wall|roof|door|window|engine|frame|mount|housing|case|cover|clamp|spacer|washer|pulley|bearing|wing|fuselage|mm|cm|inch|inches|metre|meter)\b/;
 function smallTalkReply(text) {
-  const t = text.toLowerCase().replace(/[^a-z\s]/g, " ").replace(/\s+/g, " ").trim();
-  if (!t || t.split(" ").length > 4) return "";
-  if (/^(hi+|hey+|hello+|helo|hola|yo|sup|howdy|good (morning|afternoon|evening)|hey there|hi there|hello there)$/.test(t))
-    return "Hey! Tell me what part you want to make, with sizes if you have them. For example: a 60 mm flange with four 6 mm bolt holes. You can also attach a file to start from.";
-  if (/^(thanks?|thank you|thx|ty|cheers|ok|okay|cool|nice|great|perfect|got it)$/.test(t))
+  const t = text.toLowerCase().replace(/[^a-z\s']/g, " ").replace(/\s+/g, " ").trim();
+  if (!t || t.split(" ").length > 9 || BUILD_WORDS.test(t)) return "";
+  if (/\b(thanks|thank you|thx|cheers|appreciate)\b/.test(t) || /^(ok|okay|cool|nice|great|perfect|got it|awesome|alright)$/.test(t))
     return "You are welcome. Tell me what to change, or describe another part.";
+  if (/\b(what can you do|what do you do|who are you|what is this|how does this work|how do you work|help me|can you help|what can i)\b/.test(t) || /^help$/.test(t))
+    return "I turn plain descriptions into real CAD parts. Describe something with sizes, like a 60 mm flange with four 6 mm bolt holes, and I will build a preview you can look at and change by talking. When it looks right, Generate gives you STEP, DXF, PDF and more. I can also open a file you attach, or work on assemblies and buildings.";
+  if (/\b(how are you|how r u|how is it going|hows it going|whats up|what s up)\b/.test(t))
+    return "Doing well, and ready to build. What are we making?";
+  if (/\b(hi|hey|hello|helo|hola|howdy|yo|sup|good morning|good afternoon|good evening|greetings)\b/.test(t))
+    return "Hey! What would you like to make? You can describe a part with sizes, or attach a file to start from.";
   return "";
 }
+/* Talking and building happen in one chat. You can keep sending while a build runs: the new message waits its turn
+   (the server handles one turn per chat at a time) and shows as a normal message in the meantime. */
+function syncSend() { $("send").disabled = !$("input").value.trim(); }
 async function send(text, templateId, importId) {
   text = (text || "").trim();
-  if (!text || S.busy) return;
+  if (!text) return;
+  if (S.busy && (templateId || importId)) { toast("Wait for the current message to finish."); return; }
   let c = chat();
   if (!c) { c = newChat(); S.activeId = c.id; }
-  c.messages.push({ id: uid(), role: "user", text });
+  const msg = { id: uid(), role: "user", text };
+  c.messages.push(msg);
   if (c.title === "New design") c.title = text.length > 44 ? text.slice(0, 42).trim() + "..." : text;
   c.updatedAt = Date.now();
   if (!templateId && !importId) { $("input").value = ""; autosize(); }
-  /* Plain greetings and thanks get an instant local answer: no server round trip, no wait, no credits. */
+  /* Plain greetings and thanks get an instant local answer: no server round trip and no wait. */
   if (!templateId && !importId) {
     const quick = smallTalkReply(text);
     if (quick) {
       c.messages.push({ id: uid(), role: "assistant", text: quick, local: true });
-      c.updatedAt = Date.now(); save(); renderThread(); renderSide(); $("chatTitle").textContent = c.title; scrollEnd(true);
-      $("send").disabled = !$("input").value.trim();
+      c.updatedAt = Date.now(); save(); renderThread(); renderSide(); $("chatTitle").textContent = c.title; scrollEnd(true); syncSend();
       return;
     }
   }
-  $("send").disabled = true;
+  if (S.busy) {
+    msg.queued = true; S.queue.push({ c, msg });
+    save(); renderThread(); renderSide(); scrollEnd(true); syncSend();
+    return;
+  }
+  await runTurn(c, msg, templateId, importId);
+  await drainQueue();
+}
+async function drainQueue() {
+  while (!S.busy && S.queue.length) {
+    const q = S.queue.shift();
+    if (!S.chats.includes(q.c)) continue;
+    q.msg.queued = false;
+    const ok = await runTurn(q.c, q.msg);
+    if (ok === false) { S.queue = []; break; }
+  }
+}
+async function runTurn(c, userMsg, templateId, importId) {
+  const text = userMsg.text;
   S.busy = true; renderThread(); renderSide(); $("chatTitle").textContent = c.title; scrollEnd(false); showWorking();
   let out;
   try {
@@ -1314,21 +1419,23 @@ async function send(text, templateId, importId) {
     if (!out) out = importId ? await Backend.startImport({ chat: c, importId }) : templateId ? await Backend.applyTemplate({ chat: c, id: templateId, text }) : await Backend.send({ chat: c, text });
   } catch (e) { out = { reply: "Something went wrong on my side. Please try again.", error: true }; }
   if (out.error && c.remote && [0, 409, 502, 503, 504].includes(out.status)) {
-    const known = c.messages.filter((m) => !m.local).length - 1;   // server messages before this one; the failed user message is the last local entry
+    const known = c.messages.slice(0, Math.max(0, c.messages.indexOf(userMsg))).filter((m) => !m.local && !m.queued).length;   // server messages before this one
     const back = await recoverTurn(c, known);
     if (back && back.recovered) {
       hideWorking(); S.busy = false;
+      const waiting = S.queue.filter((q) => q.c === c).map((q) => q.msg);
       Object.assign(c, back.recovered); S.activeId = c.id;
+      waiting.forEach((m) => c.messages.push(m));   // messages still waiting their turn stay in the chat
       const lp = lastPart(c); if (lp) S.activePartId = lp.id;
       c.updatedAt = Date.now(); save(); refreshAi(); renderThread(); renderSide(); scrollEnd(true);
       if (lp) { openCanvas(lp.id, "specs"); if (innerWidth <= 1180) closeCanvas(); }
-      $("send").disabled = !$("input").value.trim();
-      return;
+      syncSend();
+      return true;
     }
     if (back && back.authExpired) out = back;
   }
   hideWorking(); S.busy = false;
-  if (out.authExpired) { Auth.clearSession(); c.messages.pop(); toast("Your session expired. Sign in again."); save(); route(); return; }
+  if (out.authExpired) { Auth.clearSession(); c.messages = c.messages.filter((m) => m !== userMsg); toast("Your session expired. Sign in again."); save(); route(); return false; }
   const msg = { id: uid(), role: "assistant", text: out.reply || "" };
   if (out.error) msg.retry = text;
   if (out.needCredits) msg.needCredits = true;
@@ -1337,12 +1444,15 @@ async function send(text, templateId, importId) {
   if (out.part) { c.parts[out.part.id] = out.part; msg.partId = out.part.id; S.activePartId = out.part.id; out.part.reqResults = out.requirements || []; }
   else if (out.requirements && out.requirements.length) { const lp = lastPart(c); if (lp) lp.reqResults = out.requirements; }
   if (out.newRequirements && out.newRequirements.length) c.requirements = [...(c.requirements || []), ...out.newRequirements];
-  c.messages.push(msg); c.updatedAt = Date.now(); save();
+  const at = c.messages.indexOf(userMsg);
+  if (at >= 0) c.messages.splice(at + 1, 0, msg); else c.messages.push(msg);   // the answer sits right under its question
+  c.updatedAt = Date.now(); save();
   if (out.balance != null) setBalance(out.balance);
   refreshAi();
   renderThread(); renderSide(); scrollEnd(true);
   if (out.part) { openCanvas(out.part.id, "specs"); if (innerWidth <= 1180) closeCanvas(); }
-  $("send").disabled = !$("input").value.trim();
+  syncSend();
+  return !out.error;
 }
 
 
@@ -1667,7 +1777,7 @@ document.addEventListener("keydown", (e) => { if (e.key === "Escape") { if (!$("
 
 /* ============================================================ composer */
 function autosize() { const t = $("input"); t.style.height = "auto"; t.style.height = Math.min(t.scrollHeight, 180) + "px"; }
-$("input").addEventListener("input", () => { autosize(); $("send").disabled = S.busy || !$("input").value.trim(); });
+$("input").addEventListener("input", () => { autosize(); $("send").disabled = !$("input").value.trim(); });
 $("input").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey && !IS_TOUCH) { e.preventDefault(); send($("input").value); } });
 $("send").addEventListener("click", () => send($("input").value));
 

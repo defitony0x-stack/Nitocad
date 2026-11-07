@@ -473,3 +473,10 @@ html[data-theme="dark"] .bubble{background:#161624;}
 .filecard .fc-trace-row select,.filecard .fc-trace-row input{background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:6px 8px;font:inherit;font-size:.85rem;min-width:0;}
 .filecard .fc-trace-row input{width:110px;}
 .filecard .fc-trace-check{display:flex;gap:6px;align-items:center;font-size:.82rem;color:var(--ink-soft);margin-bottom:4px;}
+
+/* conversation: live reply, one-line status, messages waiting their turn */
+.stream-text p:last-child{margin-bottom:0;}
+.think-note.live::after{content:"";display:inline-block;width:1.2em;text-align:left;animation:thinkEll 1.2s steps(1) infinite;}
+@keyframes thinkEll{0%{content:"";}25%{content:".";}50%{content:"..";}75%{content:"...";}}
+.msg.user.queued .bubble{opacity:.6;}
+@media (prefers-reduced-motion:reduce){.think-note.live::after{animation:none;content:"...";}}
