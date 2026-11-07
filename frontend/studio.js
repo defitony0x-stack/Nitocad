@@ -905,31 +905,21 @@ function needCreditsHtml() {
 }
 function scrollEnd(smooth) { const t = $("thread"); t.scrollTo({ top: t.scrollHeight, behavior: smooth ? "smooth" : "auto" }); }
 
-/* working indicator */
-let workTimer = 0;
+/* working indicator: three bouncing dots, like a chat app "thinking" state */
+let workTimer = 0, workTimer2 = 0;
 function showWorking(steps, waitText) {
   const inner = $("threadInner");
-  steps = steps || ["Reading your request", "Checking the dimensions", "Building the solid", "Preparing the preview"];
   waitText = waitText || "Still building. Detailed parts can take a minute or two.";
   const el = document.createElement("div"); el.className = "msg"; el.id = "working";
-  el.innerHTML = ASSIST_AVA + '<div class="reply"><div class="working">' + steps.map((s, i) => `<div class="work-row ${i === 0 ? "live" : ""}" data-i="${i}"><span class="tick"></span><span>${s}</span></div>`).join("") + "</div></div>";
+  el.setAttribute("role", "status"); el.setAttribute("aria-label", "Thinking");
+  el.innerHTML = ASSIST_AVA + '<div class="reply"><div class="thinking"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div><div class="think-note" hidden></div></div>';
   inner.appendChild(el); scrollEnd(true);
-  let i = 0;
-  workTimer = setInterval(() => {
-    const rows = el.querySelectorAll(".work-row");
-    if (i < rows.length) { rows[i].className = "work-row done"; rows[i].querySelector(".tick").innerHTML = '<svg viewBox="0 0 12 12"><path d="M2 6.5l2.5 2.5L10 3.5"/></svg>'; }
-    i++;
-    if (i < rows.length) rows[i].className = "work-row live";
-    else {
-      clearInterval(workTimer);
-      const more = document.createElement("div"); more.className = "work-row live";
-      more.innerHTML = '<span class="tick"></span><span>' + esc(waitText) + '</span>';
-      el.querySelector(".working").appendChild(more);
-      setTimeout(() => { if (more.isConnected) more.lastChild.textContent = "This one is taking longer than usual. You can keep waiting."; }, 60000);
-    }
-  }, 1100);
+  const note = el.querySelector(".think-note");
+  clearTimeout(workTimer); clearTimeout(workTimer2);
+  workTimer = setTimeout(() => { if (note.isConnected) { note.textContent = waitText; note.hidden = false; } }, 12000);
+  workTimer2 = setTimeout(() => { if (note.isConnected) { note.textContent = "This one is taking longer than usual. You can keep waiting."; note.hidden = false; } }, 60000);
 }
-function hideWorking() { clearInterval(workTimer); const w = $("working"); if (w) w.remove(); }
+function hideWorking() { clearTimeout(workTimer); clearTimeout(workTimer2); const w = $("working"); if (w) w.remove(); }
 
 /* ============================================================ rendering: canvas */
 function renderCanvas() {
@@ -1266,8 +1256,8 @@ function closeCanvas() { $("app").classList.remove("canvas-open"); $("scrim").cl
 const sleepMs = (ms) => new Promise((r) => setTimeout(r, ms));
 async function recoverTurn(c, knownCount) {
   if (DEMO || !c.remote) return null;
-  const row = document.querySelector("#working .work-row.live:last-child span:last-child") || document.querySelector("#working .work-row:last-child span:last-child");
-  if (row) row.textContent = "Checking whether the build finished...";
+  const row = document.querySelector("#working .think-note");
+  if (row) { row.textContent = "Checking whether the build finished..."; row.hidden = false; }
   for (let i = 0; i < 30; i++) {
     await sleepMs(i < 3 ? 2500 : 5000);
     const r = await api("GET", `/chats/${c.id}`, null, 20000);
