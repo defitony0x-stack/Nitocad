@@ -14,8 +14,7 @@ button,label.b{background:#2b3036;color:#e8e8e8;border:1px solid #444;border-rad
 #list{max-height:84px;overflow:auto;font-size:12px}
 #list div{display:inline-block;margin:2px 4px 2px 0;padding:2px 8px;border:1px solid #444;border-radius:10px}
 #list div.on{background:#e8a33d;color:#111}
-</style><script>window.va=window.va||function(){(window.vaq=window.vaq||[]).push(arguments);};</script>
-<script defer src="/_vercel/insights/script.js"></script>
+</style><script defer src="/_vercel/insights/script.js"></script>
 </head><body>
 <canvas id="c"></canvas>
 <div id="top"><b id="ttl"></b><div id="warn">Schematic: parts are bounding boxes, not true solids. Axes: X long, Y lateral, Z up (mm).</div></div>
@@ -52,7 +51,7 @@ function load(d){
   var n=d.parts.length, lo=[1e9,1e9,1e9], hi=[-1e9,-1e9,-1e9], list=document.getElementById('list'); list.innerHTML='';
   d.parts.forEach(function(p,i){
     for(var k=0;k<3;k++){lo[k]=Math.min(lo[k],p.min[k],p.min[k]+p.offset[k]);hi[k]=Math.max(hi[k],p.max[k],p.max[k]+p.offset[k]);}
-    var tag=document.createElement('div'); tag.textContent=(i+1)+'. '+p.name; tag.onclick=function(){hl(i)}; list.appendChild(tag);
+    var tag=document.createElement('div'); tag.textContent=(i+1)+'. '+(p.label||p.name); tag.title=p.name; tag.onclick=function(){hl(i)}; list.appendChild(tag);
     if(!R){ flat.push({p:p,step:p.step==null?i:p.step,hue:(i*0.13)%1}); return; }
     var a=P(p.min), b=P(p.max), mn=a.clone().min(b), mx=a.clone().max(b), size=mx.clone().sub(mn);
     var m=new THREE.Mesh(new THREE.BoxGeometry(size.x,size.y,size.z),
