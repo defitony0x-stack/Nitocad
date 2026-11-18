@@ -1,4 +1,4 @@
-/* NitoCAD shared sign-in. Used by the landing page and CAD Studio.
+/* NitoCAD shared sign-in. Used by the landing page and Workspace.
    Identity is either a wallet (free signature, no gas) or Google. Both end up as the same
    kind of session, stored in localStorage under the key the backend flow already used,
    so anyone already signed in on the old page stays signed in. */

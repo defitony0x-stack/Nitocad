@@ -1,4 +1,4 @@
-/* NitoCAD Studio: front end only.
+/* NitoWorkspace: front end only.
    Preview first, pay when you generate: every message builds a free preview, and a part's full
    files (STEP, IGES, DXF, PDF) unlock when the person presses Generate, which spends credits.
    The price depends on the AI tier that planned the version, and there is no daily message limit.
