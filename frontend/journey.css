@@ -121,3 +121,7 @@ html[data-theme="light"]{
 .jx-idea .btn{padding:14px 22px;font-size:.95rem}
 .jx-cv svg text{letter-spacing:0}
 .jx-idea-note .demo-status{display:block;margin-bottom:4px;min-height:0}.jx-idea-note .demo-status:empty{display:none}
+.jx-welcome .sec-head{margin-bottom:32px}.jx-welcome .sec-head h2{max-width:22ch}
+.hero-support{margin:-12px 0 24px;font-size:1.02rem;line-height:1.5;color:var(--ink);font-weight:500;max-width:40ch}
+html[data-theme="dark"] body.adam .hero-v2 h1{max-width:19ch}
+html[data-theme="dark"] body.adam .hero-support{color:#e8edf5}
