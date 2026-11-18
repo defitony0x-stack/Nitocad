@@ -821,21 +821,21 @@
       <h1>The engineer that checks <em>its own work.</em></h1>
       <p class="lead">Describe an engine part, a gear or a bracket. Say what it must do once. NitoCAD builds it, checks every version against that, and answers PASS, FAIL or UNKNOWN. Never a guess.</p>
       <div class="jx-idea">
-        <label for="jxIdea">What are we building today?</label>
-        <textarea id="jxIdea" placeholder="A mount for a small electric motor on an industrial machine. Easy to make, and I need to reach the motor for maintenance."></textarea>
-        <div class="jx-chips" id="jxKinds" role="group" aria-label="Kind of project">
-          <button type="button" class="jx-chip" aria-pressed="false">Mechanical</button>
-          <button type="button" class="jx-chip" aria-pressed="false">Automotive</button>
-          <button type="button" class="jx-chip" aria-pressed="false">Aerospace</button>
-          <button type="button" class="jx-chip" aria-pressed="false">Civil &amp; buildings</button>
-          <button type="button" class="jx-chip" aria-pressed="false">Circuits</button>
-          <button type="button" class="jx-chip" aria-pressed="false">Other</button>
+        <label for="description">What are we building today?</label>
+        <textarea id="description" placeholder="Describe it in your own words, or pick a type below for an example."></textarea>
+        <div class="jx-chips" id="jxKinds" role="group" aria-label="Pick a type to fill in an example">
+          <button type="button" class="jx-chip" aria-pressed="false" data-prompt="A mount for a 50 mm stepper motor, 4 holes, 5 mm fillets, 3 mm thick. Easy to make, and I need to reach the motor for maintenance.">Mechanical</button>
+          <button type="button" class="jx-chip" aria-pressed="false" data-prompt="A brake disc, 280 mm diameter, 22 mm thick, with 5 bolt holes on a 114.3 mm pattern.">Automotive</button>
+          <button type="button" class="jx-chip" aria-pressed="false" data-prompt="A mounting bracket for an avionics box, 100 x 80 mm base, 3 mm thick, with 4 holes.">Aerospace</button>
+          <button type="button" class="jx-chip" aria-pressed="false" data-prompt="A retaining wall 3 m long, 1.2 m high and 300 mm thick.">Civil &amp; buildings</button>
+          <button type="button" class="jx-chip" aria-pressed="false" data-prompt="An enclosure for a circuit board 60 x 40 mm, 25 mm tall, 2 mm walls, with a lid.">Circuits</button>
+          <button type="button" class="jx-chip" aria-pressed="false" data-prompt="A gear with 20 teeth, module 2, 10 mm thick, 5 mm bore. Replace this with your own idea.">Other</button>
         </div>
         <div class="jx-idea-actions">
           <button type="button" class="btn btn-primary arrow" id="jxStart">Start in the Workspace</button>
-          <a href="#demo" class="btn btn-white arrow">Try a free preview</a>
+          <button type="button" class="btn btn-white arrow" id="demoPreview">Preview free</button>
         </div>
-        <p class="jx-idea-note">You do not need to know CAD. The Workspace asks what it needs to know before it builds.</p>
+        <p class="jx-idea-note"><span id="demoStatus" class="demo-status"></span>You do not need to know CAD. Preview is free with no account. The Workspace asks what it needs to know before it builds, and exports STEP, IGES, DXF and PDF.</p>
       </div>
       <ul class="proof-list" aria-label="What sets NitoCAD apart">
         <li><span class="k">01</span><span>Requirements stay attached and are re-checked on every version</span></li>
@@ -890,21 +890,6 @@
     </div>
   </section>
 
-  <!-- ENGINES -->
-  <section class="engines" id="engines">
-    <div class="wrap">
-      <div class="eng-head">
-        <h2>Whole engines, <em>not just parts.</em></h2>
-        <p>Pick one and it opens in the live model above, with the cutaway to look inside.</p>
-      </div>
-      <div class="eng-grid">
-        <button type="button" class="eng" data-jump="engine-4"><span class="cap">Assembly &middot; 26 parts</span><b>Inline-4 engine</b><span class="d">80 mm bore, 80 mm stroke, 150 mm rods. Block, head, crankshaft, four pistons and rods, sump, manifolds.</span><i>Open in the model &uarr;</i></button>
-        <button type="button" class="eng" data-jump="engine-1"><span class="cap">Assembly &middot; 14 parts</span><b>Single-cylinder engine</b><span class="d">The same 80 &times; 80 mm layout around one cylinder, with piston, rod, crank and flywheel.</span><i>Open in the model &uarr;</i></button>
-        <button type="button" class="eng" data-jump="crankshaft"><span class="cap">Part</span><b>Crankshaft</b><span class="d">Inline-4, 80 mm stroke, five mains, eight counterweights.</span><i>Open in the model &uarr;</i></button>
-        <button type="button" class="eng" data-jump="camshaft"><span class="cap">Part</span><b>Camshaft</b><span class="d">Eight lobes on five journals at a 100 mm cylinder pitch.</span><i>Open in the model &uarr;</i></button>
-      </div>
-    </div>
-  </section>
 
   <!-- WORKSPACE PREVIEW -->
   <section class="sec" id="workspace">
@@ -958,71 +943,7 @@
     </div>
   </section>
 
-  <!-- 02 REQUIREMENTS -->
-  <section class="sec" id="requirements">
-    <div class="wrap">
-      <div class="sec-head">
-        <div>
-          <h2>Say what it must do. <em>It keeps checking.</em></h2>
-          <p>Say &ldquo;fits in 100 &times; 80 &times; 60 mm&rdquo; or &ldquo;under 200 g&rdquo; once. Every new version is measured against it, so an edit that quietly breaks an earlier requirement is caught when it is built, not when the part arrives.</p>
-        </div>
-        <span class="sec-idx">№ 02</span>
-      </div>
-      <div class="reqs" role="table" aria-label="Example requirements check">
-        <div class="reqs-top"><span class="cap">Requirements &middot; bracket v4</span><span class="cap">Example</span></div>
-        <div class="req" role="row"><span class="cap">Envelope</span><span>Fits in 100 &times; 80 &times; 60 mm</span><span class="meas">96 &times; 62 &times; 40</span><b class="vd pass">Pass</b></div>
-        <div class="req" role="row"><span class="cap">Mass</span><span>Under 200 g</span><span class="meas">212 g</span><b class="vd fail">Fail</b></div>
-        <div class="req" role="row"><span class="cap">Wall</span><span>At least 2 mm</span><span class="meas">3 mm</span><b class="vd pass">Pass</b></div>
-        <div class="req" role="row"><span class="cap">Material</span><span>6061 aluminium</span><span class="meas">not stated</span><b class="vd unk">Unknown</b></div>
-      </div>
-      <p class="reqs-note">UNKNOWN means NitoCAD could not measure it. It is never reported as a pass.</p>
-      <div class="jx-states" aria-label="Requirement states">
-        <div class="jx-state"><span class="jx-tag jx-s-Confirmed">Confirmed</span><p>You approved it.</p></div>
-        <div class="jx-state"><span class="jx-tag jx-s-Proposed">Proposed</span><p>NitoCAD suggested it. It waits for you.</p></div>
-        <div class="jx-state"><span class="jx-tag jx-s-Unknown">Unknown</span><p>Information is missing. Checks that need it stay UNKNOWN.</p></div>
-        <div class="jx-state"><span class="jx-tag jx-s-Derived">Derived</span><p>Calculated from your inputs.</p></div>
-        <div class="jx-state"><span class="jx-tag jx-s-Rejected">Rejected</span><p>You turned it down. It stays in the record.</p></div>
-      </div>
-    </div>
-  </section>
 
-  <!-- 03 DEMO -->
-  <section class="sec demo" id="demo">
-    <div class="wrap">
-      <div class="sec-head">
-        <div>
-          <h2>Try it <em>now</em></h2>
-          <p>Describe a part and get a free 3D preview right here. Sign in to open the Workspace, where you build, change and export the full files.</p>
-        </div>
-        <span class="sec-idx">№ 03</span>
-      </div>
-      <div class="demo-shell">
-        <div class="demo-bar">
-          <span></span><span></span><span></span>
-          <span class="demo-url">nitocad.dev/demo</span>
-        </div>
-        <div class="demo-live">
-          <div class="demo-examples">
-            <button type="button" data-ex="mounting bracket for a 50mm stepper motor, 4 holes, 5mm fillets, 3mm thick">Motor mount</button>
-            <button type="button" data-ex="L-bracket 50mm wide, 60mm tall, 40mm deep, 3mm thick, 2 holes per leg">L-bracket</button>
-            <button type="button" data-ex="gear with 20 teeth, module 2, 10mm thick, 5mm bore">Gear</button>
-            <button type="button" data-ex="box enclosure 100x80x50mm, 3mm walls, with lid">Box</button>
-            <button type="button" data-ex="shaft 10mm diameter, 50mm long, 0.5mm chamfer">Shaft</button>
-          </div>
-          <div class="demo-form">
-            <textarea id="description" placeholder="e.g., Spur gear, module 2, 20 teeth, 10 mm thick, 5 mm bore"></textarea>
-          </div>
-          <div class="demo-actions">
-            <button id="demoPreview" type="button" class="btn btn-primary arrow">Preview free</button>
-            <a href="studio.html" class="btn btn-white arrow">Sign in to the Workspace</a>
-            <span id="demoStatus" class="demo-status"></span>
-          </div>
-          <p class="demo-dl-meta">The preview is a free STL mesh. STEP, IGES, DXF and PDF exports, edits by chat and on-chain anchoring are in the Workspace.</p>
-        </div>
-      </div>
-    </div>
-    </div>
-  </section>
 
   <!-- Preview overlay -->
   <div class="pv-overlay" id="pvOverlay" role="dialog" aria-modal="true" aria-labelledby="pvTitle" hidden>
@@ -1068,7 +989,7 @@
           <h2>You do not need to know CAD.</h2>
           <p>You need to know what you are building. From a sentence to a file you can send to the shop.</p>
         </div>
-        <span class="sec-idx">№ 04</span>
+        <span class="sec-idx">№ 02</span>
       </div>
       <div class="jx-steps"><div class="jx-step"><span class="n">1</span><h3>Describe it</h3><p>In plain words, or attach a STEP file, a DXF or a sketch. Dimensions stay exactly as you wrote them.</p></div><div class="jx-step"><span class="n">2</span><h3>Settle the requirements</h3><p>NitoCAD asks what it needs to know. You decide, and every answer becomes a requirement.</p></div><div class="jx-step"><span class="n">3</span><h3>Watch it take shape</h3><p>NitoCAD builds a true B-rep solid in real stages, not a spinner.</p></div><div class="jx-step"><span class="n">4</span><h3>Review changes</h3><p>Edits arrive as a new revision beside the old one, never as an overwrite.</p></div><div class="jx-step"><span class="n">5</span><h3>Read the checks</h3><p>The solid, your requirements, then CNC, sheet metal, molding and 3D printing. PASS, FAIL or UNKNOWN. A failed build is not charged.</p></div><div class="jx-step"><span class="n">6</span><h3>Take the files</h3><p>STEP, STL, IGES, DXF, PDF, GLB, 3MF or URDF. Optionally anchor the design on BOT Chain as a record of what you made.</p></div></div>
     </div>
@@ -1082,7 +1003,7 @@
           <h2>One engineer. <em>Six disciplines.</em></h2>
           <p>Each one is honest about where it stops.</p>
         </div>
-        <span class="sec-idx">№ 05</span>
+        <span class="sec-idx">№ 03</span>
       </div>
       <div class="disc-grid">
         <div class="disc"><span class="cap">01</span><span class="jx-tag jx-status jx-s-Confirmed">Full checks</span><h3>Mechanical</h3><p>Engine parts, gears, shafts, brackets, enclosures and assemblies. Fits and tolerances, manufacturability, overlap and mass checks.</p><p class="lim"><span class="cap">Limit</span> Checks use typical shop guidelines, not your shop&rsquo;s limits.</p></div>
@@ -1128,7 +1049,7 @@
           <h2>Why engineers <em>use it</em></h2>
           <p>Say what the part must do. NitoCAD keeps it true as you change it.</p>
         </div>
-        <span class="sec-idx">№ 06</span>
+        <span class="sec-idx">№ 04</span>
       </div>
       <div class="why-grid">
         <div class="why-item"><h3>Your numbers stay yours</h3><p>Every value you type is kept exactly as written. If NitoCAD sees a problem with a dimension, it flags it and leaves the value alone.</p></div>
@@ -1159,14 +1080,14 @@
           <h2>Subscribe for <em>unlimited</em> projects.</h2>
           <p>Start free. Pro and Max add Expert AI and a weekly AI allowance. Every export format is included.</p>
         </div>
-        <span class="sec-idx">№ 07</span>
+        <span class="sec-idx">№ 05</span>
       </div>
       <div class="plans">
         <div class="plan">
           <span class="tier">Free</span>
           <div class="amt">$0</div>
           <p>Describe a part and see it in 3D. A free STL preview, no account required.</p>
-          <a href="#demo" class="btn btn-white arrow">Preview free</a>
+          <a href="#top" class="btn btn-white arrow">Preview free</a>
         </div>
         <div class="plan hot">
           <span class="tier">Pro</span>
@@ -1190,7 +1111,7 @@
     <div class="wrap">
       <div class="sec-head">
         <div><h2>Questions, <em>answered.</em></h2></div>
-        <span class="sec-idx">№ 08</span>
+        <span class="sec-idx">№ 06</span>
       </div>
       <div class="faq">
         <details><summary><span class="k">01</span><span>Will it tell me when it is not sure?</span></summary><div class="ans">Yes. Every check answers PASS, FAIL or UNKNOWN. UNKNOWN means NitoCAD could not measure it or an input was missing, and it is never shown as a pass.</div></details>
@@ -1210,7 +1131,7 @@
       <h2>Put NitoCAD <em>to work.</em></h2>
       <div class="cta-pair">
         <a href="studio.html" class="btn btn-primary arrow">Build your first part free</a>
-        <a href="#demo" class="btn btn-white arrow">Try a free preview</a>
+        <a href="#top" class="btn btn-white arrow">Try a free preview</a>
       </div>
     </div>
   </section>
@@ -1239,8 +1160,7 @@
         <h4>Tools</h4>
         <ul>
           <li><a href="studio.html">Workspace</a></li>
-          <li><a href="preview.html">Free preview</a></li>
-          <li><a href="codegen.html">Describe it, tune it</a></li>
+                    <li><a href="codegen.html">Describe it, tune it</a></li>
           <li><a href="import.html">Import &amp; edit</a></li>
           <li><a href="refine.html">Prompt refine</a></li>
           <li><a href="aerospace.html">Aerospace check</a></li>

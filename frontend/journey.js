@@ -1,5 +1,5 @@
 /* NitoCAD journey layer.
-   1) Hero idea box: hands the description to the Workspace through the same
+   1) Hero idea box: each type chip fills in an example prompt; the box hands the description to the Workspace through the same
       sessionStorage key ("nito_prefill") the free preview already uses.
    2) Workspace preview: a self-contained example project. All data here is
       illustrative and labelled as such on the page. It makes no network calls. */
@@ -9,20 +9,18 @@
   function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
 
   /* ---------- 1. idea box ---------- */
-  var idea = $("jxIdea");
+  var idea = $("description");
   if (idea) {
     var chipWrap = $("jxKinds");
     chipWrap.addEventListener("click", function (e) {
       var b = e.target.closest(".jx-chip"); if (!b) return;
-      var on = b.getAttribute("aria-pressed") === "true";
-      b.setAttribute("aria-pressed", on ? "false" : "true");
+      Array.prototype.forEach.call(chipWrap.querySelectorAll(".jx-chip"), function (c) { c.setAttribute("aria-pressed", c === b ? "true" : "false"); });
+      idea.value = b.getAttribute("data-prompt") || "";
+      idea.focus();
     });
     $("jxStart").addEventListener("click", function () {
       var text = idea.value.trim();
-      var kinds = Array.prototype.map.call(chipWrap.querySelectorAll('[aria-pressed="true"]'), function (b) { return b.textContent; });
-      var out = text;
-      if (kinds.length) out = (text ? text + "\n\n" : "") + "Project type: " + kinds.join(", ") + ".";
-      try { if (out) sessionStorage.setItem("nito_prefill", out); } catch (e) {}
+      try { if (text) sessionStorage.setItem("nito_prefill", text); } catch (e) {}
       location.href = "studio.html";
     });
   }
