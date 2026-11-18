@@ -7,6 +7,8 @@
 
   var API_BASE = (window.NITOCAD_CONFIG && window.NITOCAD_CONFIG.apiBase) || "https://nitocad-production-2df5.up.railway.app";
   var SESSION_KEY = "nitocad_wallet_session_" + API_BASE;
+  var WELCOME_KEY = "nitocad_welcome_pending_" + API_BASE;
+  var signupBonus = 250;
 
   // Payment destination and chain params are pinned in the frontend so a backend change
   // can never redirect funds. Keep in sync with Railway env (TREASURY_ADDRESS) and config.py.
@@ -113,6 +115,7 @@
       var cfg;
       try { cfg = await (await fetch(API_BASE + "/config/auth")).json(); } catch (e) { return false; }
       if (!cfg || !cfg.google_signin_enabled) return false;
+      if (cfg.signup_bonus_credits > 0) signupBonus = cfg.signup_bonus_credits;
       await new Promise(function (resolve) {
         var sc = document.createElement("script");
         sc.src = "https://accounts.google.com/gsi/client"; sc.async = true; sc.defer = true;
@@ -130,6 +133,10 @@
             });
             var session = await resp.json();
             if (!resp.ok) throw new Error(session.detail || "Google sign-in failed.");
+            if (session.is_new && session.welcome_bonus > 0) {
+              try { localStorage.setItem(WELCOME_KEY, JSON.stringify({ bonus: session.welcome_bonus })); } catch (e) {}
+            }
+            delete session.is_new; delete session.welcome_bonus;
             setSession(session);
           } catch (err) {
             if (api.onError) api.onError(err);
@@ -145,6 +152,7 @@
   async function initGoogle(buttons) {
     var ok = await loadGoogle();
     if (!ok) return false;
+    document.querySelectorAll("[data-signup-bonus]").forEach(function (el) { el.textContent = signupBonus; });
     buttons.filter(Boolean).forEach(function (btn) {
       btn.style.display = "";
       btn.onclick = function () {
@@ -178,7 +186,47 @@
     } catch (e) { return null; }
   }
 
+  // One-time welcome banner for a brand-new account. Shown once, then the flag is cleared.
+  function showWelcome() {
+    var raw = null, data = null;
+    try { raw = localStorage.getItem(WELCOME_KEY); } catch (e) { return; }
+    if (!raw || !getSession()) return;
+    try { data = JSON.parse(raw); } catch (e) { data = null; }
+    try { localStorage.removeItem(WELCOME_KEY); } catch (e) {}
+    if (!data || !(data.bonus > 0)) return;
+    if (!document.getElementById("nitoWelcomeCss")) {
+      var st = document.createElement("style");
+      st.id = "nitoWelcomeCss";
+      st.textContent =
+        ".nito-welcome{position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:9999;width:min(560px,calc(100% - 24px));" +
+        "display:flex;align-items:center;gap:14px;padding:14px 16px;border-radius:14px;background:#111;color:#fff;" +
+        "box-shadow:0 18px 50px -18px rgba(0,0,0,.55);font:500 14px/1.4 'IBM Plex Sans',system-ui,sans-serif;animation:nitoWelcomeIn .35s ease}" +
+        ".nito-welcome b{font-weight:700}.nito-welcome .nw-txt{flex:1}.nito-welcome small{display:block;opacity:.75;font-weight:400;margin-top:2px}" +
+        ".nito-welcome button{background:#fff;color:#111;border:0;border-radius:9px;padding:8px 12px;font:600 13px inherit;cursor:pointer}" +
+        ".nito-welcome .nw-x{background:transparent;color:#fff;opacity:.7;padding:4px 8px;font-size:18px}" +
+        "@keyframes nitoWelcomeIn{from{opacity:0;transform:translate(-50%,-12px)}to{opacity:1;transform:translate(-50%,0)}}";
+      document.head.appendChild(st);
+    }
+    var el = document.createElement("div");
+    el.className = "nito-welcome";
+    el.setAttribute("role", "status");
+    el.innerHTML = '<div class="nw-txt">Welcome to NitoCAD. <b></b> free credits are in your account.' +
+      '<small>Previews and changes are free. Credits are only used when you generate the full files.</small></div>' +
+      '<button type="button" class="nw-go">Start building</button><button type="button" class="nw-x" aria-label="Close">&times;</button>';
+    el.querySelector("b").textContent = data.bonus;
+    function close() { if (el.parentNode) el.parentNode.removeChild(el); }
+    el.querySelector(".nw-go").onclick = function () {
+      close();
+      var inp = document.getElementById("input");
+      if (inp) inp.focus();
+    };
+    el.querySelector(".nw-x").onclick = close;
+    document.body.appendChild(el);
+    setTimeout(close, 15000);
+  }
+
   var api = {
+    showWelcome: showWelcome,
     API_BASE: API_BASE, PINNED_CHAIN: PINNED_CHAIN,
     getSession: getSession, clearSession: clearSession, authHeader: authHeader,
     shortAddress: shortAddress, displayName: displayName,

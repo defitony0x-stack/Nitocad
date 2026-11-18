@@ -2079,8 +2079,9 @@ async function loadConfig() {
 let booted = false;
 function route() {
   const signed = DEMO || !!Auth.getSession();
-  if (!signed) { showGate(true); booted = false; Auth.initGoogle([$("gateGoogle")]); return; }
+  if (!signed) { showGate(true); booted = false; Auth.initGoogle([$("gateGoogle"), $("gateSignUp")]).then(ok => { if (ok) $("gateBonus").style.display = ""; }); return; }
   showGate(false);
+  if (Auth.showWelcome) Auth.showWelcome();
   if (!booted) { booted = true; fillAccount(); refreshBalance(); loadConfig(); loadAi(); load().then(() => { if (!Auth.getSession() && !DEMO) return route(); renderAll(); if (location.hash === "#assembly") openAsm("start"); else if (/^#tool=/.test(location.hash)) openTool(location.hash.slice(6)); else if (!IS_TOUCH) $("input").focus(); }); }
 }
 Auth.onChange(() => route());
