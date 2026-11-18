@@ -439,7 +439,7 @@
 
   /* footer */
   footer{border-top:1px solid var(--line);background:#fff;padding:56px 0 0;color:var(--ink-soft);}
-  .ft-top{display:grid;grid-template-columns:1.6fr repeat(3,1fr);gap:40px;padding-bottom:44px;}
+  .ft-top{display:grid;grid-template-columns:1.6fr repeat(4,1fr);gap:40px;padding-bottom:44px;}
   .ft-brand .logo{font-size:1.35rem;}
   .ft-blurb{margin:14px 0 20px;font-size:.9rem;line-height:1.6;max-width:36ch;}
   .ft-social{display:flex;gap:10px;}
@@ -502,7 +502,7 @@
     .panes{grid-template-columns:1fr;}
     .burger{display:flex;}
     nav.wrap > a.btn-primary{display:none;}
-    #walletNavBtn{display:none;}
+    #accountNavBtn{display:none;}
     /* Google sign-in lives only in the dropdown (#googleSignInBtnMobile) */
     #googleSignInBtn, #googleSignInDiv{display:none !important;}
   }
@@ -741,7 +741,6 @@
   }
 ]
 </script>
-<script>window.va=window.va||function(){(window.vaq=window.vaq||[]).push(arguments);};</script>
 <script defer src="/_vercel/insights/script.js"></script>
 </head>
 <body class="adam">
@@ -765,7 +764,7 @@
       Sign in with Google
     </button>
     <div id="googleSignInDiv" style="display:none;"></div>
-    <button id="walletNavBtn" class="btn btn-ghost">Connect Wallet</button>
+    <button id="accountNavBtn" class="btn btn-ghost" type="button" style="display:none;"></button>
     <a href="studio.html" class="btn btn-primary arrow" id="studioNavBtn">Build a part</a>
     <button class="burger" id="burger" aria-label="Open menu" aria-expanded="false" aria-controls="mobileMenu">
       <span class="bt">Menu</span><span class="bl"></span>
@@ -776,12 +775,13 @@
     <a href="exports.html">Exports</a>
     <a href="whitepaper.html">White paper</a>
     <a href="studio.html">CAD Studio</a>
+    <a href="text-to-cad.html">Text-to-CAD guide</a>
     <button id="googleSignInBtnMobile" class="btn btn-google" type="button" style="display:none;margin-bottom:10px;" title="Sign in with Google">
       <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#9B9B9B" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
       Sign in with Google
     </button>
     <div id="googleSignInDivMobile" style="display:none;"></div>
-    <button id="walletNavBtnMobile" class="btn btn-ghost">Connect Wallet</button>
+    <button id="accountNavBtnMobile" class="btn btn-ghost" type="button" style="display:none;"></button>
     <a href="studio.html" class="btn btn-primary arrow">Build your first part free</a>
   </div>
 </header>
@@ -1046,7 +1046,7 @@
         <div class="why-item"><h3>No charge for a failed build</h3><p>Preview every part free. If a generation fails, it does not count against your plan.</p></div>
       </div>
       <ul class="today-list">
-        <li><span class="k">01</span><span>Free STL preview, no wallet required</span></li>
+        <li><span class="k">01</span><span>Free STL preview, no account required</span></li>
         <li><span class="k">02</span><span>STEP, IGES, DXF and PDF in every plan</span></li>
         <li><span class="k">03</span><span>Callable by AI agents over MCP on BOT Chain</span></li>
         <li><span class="k">04</span><span>On-chain design provenance</span></li>
@@ -1075,7 +1075,7 @@
         <div class="plan">
           <span class="tier">Free</span>
           <div class="amt">$0</div>
-          <p>Describe a part and see it in 3D. A free STL preview, no wallet required.</p>
+          <p>Describe a part and see it in 3D. A free STL preview, no account required.</p>
           <a href="#demo" class="btn btn-white arrow">Preview free</a>
         </div>
         <div class="plan hot">
@@ -1106,7 +1106,7 @@
         <details><summary><span class="k">01</span><span>Will it tell me when it is not sure?</span></summary><div class="ans">Yes. Every check answers PASS, FAIL or UNKNOWN. UNKNOWN means NitoCAD could not measure it or an input was missing, and it is never shown as a pass.</div></details>
         <details><summary><span class="k">02</span><span>Can it certify my design?</span></summary><div class="ans">No. Aerospace results stop at &ldquo;ready for engineering review&rdquo;, civil checks are screening level and building rules are conceptual. A licensed engineer must verify anything that gets built.</div></details>
         <details><summary><span class="k">03</span><span>Does it change the numbers I type?</span></summary><div class="ans">No. Every value you type is kept exactly as written. If NitoCAD sees a problem with a dimension, it flags it and leaves the value alone.</div></details>
-        <details><summary><span class="k">04</span><span>Is the preview really free?</span></summary><div class="ans">Yes. The preview is a free STL mesh and needs no wallet. The STEP, IGES, DXF and PDF files are generated in CAD Studio and included in every plan.</div></details>
+        <details><summary><span class="k">04</span><span>Is the preview really free?</span></summary><div class="ans">Yes. The preview is a free STL mesh and needs no account. The STEP, IGES, DXF and PDF files are generated in CAD Studio and included in every plan.</div></details>
         <details><summary><span class="k">05</span><span>What if a build fails?</span></summary><div class="ans">You are not charged. A failed generation is refunded.</div></details>
         <details><summary><span class="k">06</span><span>Can I start from my own file?</span></summary><div class="ans">Yes. Type the part in plain English, or attach a STEP file, a DXF or a sketch.</div></details>
         <details><summary><span class="k">07</span><span>Which formats can I export?</span></summary><div class="ans">STEP, STL, IGES, DXF, PDF, GLB, 3MF and URDF.</div></details>
@@ -1149,6 +1149,22 @@
         <h4>Tools</h4>
         <ul>
           <li><a href="studio.html">CAD Studio</a></li>
+          <li><a href="preview.html">Free preview</a></li>
+          <li><a href="codegen.html">Describe it, tune it</a></li>
+          <li><a href="import.html">Import &amp; edit</a></li>
+          <li><a href="refine.html">Prompt refine</a></li>
+          <li><a href="aerospace.html">Aerospace check</a></li>
+          <li><a href="civil.html">Civil tools</a></li>
+          <li><a href="profile.html">My Projects</a></li>
+        </ul>
+      </div>
+      <div class="ft-col">
+        <h4>Learn</h4>
+        <ul>
+          <li><a href="text-to-cad.html">AI text-to-CAD</a></li>
+          <li><a href="text-to-step.html">Text to STEP file</a></li>
+          <li><a href="b-rep-vs-mesh.html">B-rep vs mesh</a></li>
+          <li><a href="how-verification-works.html">How verification works</a></li>
         </ul>
       </div>
       <div class="ft-col wide">
@@ -1196,13 +1212,13 @@ import { applyRealisticLook, prepareStlGeometry, buildPartObject } from "./viewe
   const base = Auth.API_BASE;
 
   /* ---------- account buttons in the nav ---------- */
-  const walletBtns = [document.getElementById('walletNavBtn'), document.getElementById('walletNavBtnMobile')].filter(Boolean);
+  const accountBtns = [document.getElementById('accountNavBtn'), document.getElementById('accountNavBtnMobile')].filter(Boolean);
   const googleBtns = [document.getElementById('googleSignInBtn'), document.getElementById('googleSignInBtnMobile')].filter(Boolean);
   const studioHref = 'studio.html';
 
   function renderAccount(){
     const session = Auth.getSession();
-    walletBtns.forEach(b => { b.textContent = session ? Auth.displayName(session) : 'Connect Wallet'; });
+    accountBtns.forEach(b => { b.textContent = session ? Auth.displayName(session) : ''; b.style.display = session ? '' : 'none'; });
     if (session) googleBtns.forEach(b => { b.style.display = 'none'; });
   }
   Auth.onChange(renderAccount);
@@ -1212,17 +1228,13 @@ import { applyRealisticLook, prepareStlGeometry, buildPartObject } from "./viewe
   // Signing in from the landing page goes straight to the studio.
   function goStudio(){ window.location.href = studioHref; }
 
-  async function onWalletClick(){
+  async function onAccountClick(){
     const existing = Auth.getSession();
-    if (existing) {
-      if (window.confirm('Signed in as ' + Auth.displayName(existing) + '.\n\nOK to open CAD Studio, Cancel to sign out.')) goStudio();
-      else await Auth.signOut();
-      return;
-    }
-    try { await Auth.signInWithWallet(); goStudio(); }
-    catch (err) { alert('Wallet sign-in failed: ' + err.message); }
+    if (!existing) return;
+    if (window.confirm('Signed in as ' + Auth.displayName(existing) + '.\n\nOK to open CAD Studio, Cancel to sign out.')) goStudio();
+    else await Auth.signOut();
   }
-  walletBtns.forEach(b => b.addEventListener('click', onWalletClick));
+  accountBtns.forEach(b => b.addEventListener('click', onAccountClick));
 
   Auth.initGoogle(googleBtns).then(() => {
     // After a Google sign-in completes, the session change sends the person to the studio.

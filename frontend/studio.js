@@ -3,7 +3,7 @@
    files (STEP, IGES, DXF, PDF) unlock when the person presses Generate, which spends credits.
    The price depends on the AI tier that planned the version, and there is no daily message limit.
    All backend calls go through the `Backend` object near the top. When the chat backend
-   changes, replace `Backend.send` and `Backend.anchor` and leave the rest alone.
+   changes, replace `Backend.send` and leave the rest alone.
    Add ?demo=1 to the URL to explore the interface with sample parts and no sign-in. */
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
@@ -46,30 +46,6 @@ const Backend = {
     return turnOut(r.data);
   },
 
-  async anchor(part) {
-    if (DEMO) { await sleep(1400); return { anchor_tx: "0x" + uid() + uid() + uid() + uid() + uid() + uid(), explorer_url: "https://scan.botchain.ai" }; }
-    const session = Auth.getSession();
-    if (!session) throw new Error("Your session expired. Sign in again.");
-    const auth = { Authorization: "Bearer " + session.session_id };
-    const prep = await fetch(`${BASE}/api/jobs/${part.jobId}/anchor/prepare`, { method: "POST", headers: auth });
-    const p = await prep.json().catch(() => ({}));
-    if (!prep.ok) throw new Error(p.detail || "Could not prepare the anchor.");
-    if (p.already_anchored) return { anchor_tx: p.anchor_tx, explorer_url: p.explorer_url };
-    if (!window.ethereum) throw new Error("No wallet found to sign the anchor.");
-    try { await window.ethereum.request({ method: "wallet_switchEthereumChain", params: [{ chainId: p.tx.chainId }] }); } catch (e) { /* already on chain */ }
-    const txHash = await window.ethereum.request({ method: "eth_sendTransaction", params: [p.tx] });
-    for (let i = 0; i < 20; i++) {
-      const r = await fetch(`${BASE}/api/jobs/${part.jobId}/anchor/confirm`, {
-        method: "POST", headers: { ...auth, "Content-Type": "application/json" }, body: JSON.stringify({ tx_hash: txHash })
-      });
-      const d = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(d.detail || "Anchor verification failed.");
-      if (d.status === "anchored") return d;
-      await sleep(2000);
-    }
-    throw new Error("The anchor was submitted but is not confirmed yet. Check again shortly.");
-  },
-
   async exportFile(part, fmt) {
     if (DEMO) { await sleep(700); toast("Demo mode: no file is produced."); return; }
     const session = Auth.getSession();
@@ -105,7 +81,8 @@ const Backend = {
     if (r.authExpired) return { authExpired: true };
     if (!r.ok) return { reply: r.detail || "I could not start that template. Please try again.", error: true };
     const d = r.data;
-    return { reply: d.assistant_message.content, part: d.part ? fromServerPart(d.part) : null, balance: d.balance, choices: [],
+    return { reply: d.assistant_message.content, part: d.part ? fromServerPart(d.part) : null, balance: d.balance,
+      choices: (d.assistant_message.meta && d.assistant_message.meta.choices) || [],
       requirements: d.requirements || [], newRequirements: d.new_requirements || [] };
   },
 
@@ -146,26 +123,6 @@ const Backend = {
     if (DEMO) return { plan: "pro", used_pct: 24, resets_at: null, standard_open: true };
     const r = await api("GET", "/billing/usage");
     return r.ok ? r.data : null;
-  },
-
-  async buyCredits(tier) {
-    const cfg = await Auth.getChainConfig();
-    const price = tier === "single" ? cfg.credit_price_bot : tier === "pack_1000" ? cfg.pack_1000_price_bot : cfg.pack_10000_price_bot;
-    const session = Auth.getSession();
-    if (!session) throw new Error("Sign in first.");
-    const account = await Auth.connectWallet();
-    const wei = BigInt(Math.round(price * 1e18));
-    const txHash = await window.ethereum.request({
-      method: "eth_sendTransaction",
-      params: [{ from: account, to: cfg.treasury_address, value: "0x" + wei.toString(16) }]
-    });
-    const r = await fetch(BASE + "/credits/purchase", {
-      method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + session.session_id },
-      body: JSON.stringify({ tx_hash: txHash, tier })
-    });
-    const d = await r.json();
-    if (!r.ok) throw new Error(d.detail || "Purchase failed.");
-    return d.balance;
   }
 };
 
@@ -235,11 +192,10 @@ function errText(d) {
 }
 function fromServerPart(p) {
   const spec = p.spec || {};
-  const tx = p.anchor_tx || null;
   return {
     id: p.id, version: p.version, jobId: p.job_id, title: p.title, partType: p.part_type, paid: p.paid !== false, checks: p.checks || {}, generateCredits: p.generate_credits || 10, aiTier: p.ai_tier || "basic",
     params: flatParams({ parameters: spec.parameters || {} }), material: spec.material || "", notes: p.notes || [],
-    description: "", spec, anchor: tx ? { anchor_tx: tx, explorer_url: Auth.PINNED_CHAIN.explorer_url + "/tx/" + tx } : null,
+    description: "", spec,
     facts: p.facts || {}, reqResults: p.requirement_results || []
   };
 }
@@ -413,6 +369,97 @@ async function fetchStl(part, asBlob) {
 
 /* ============================================================ viewer */
 const V = { ready: false, running: false, mesh: null, wire: false, grid: true, token: 0 };
+/* ---- Which way is up. CAD files (STEP, most STL) have Z up and the viewer turns them with rotateX(-90deg), so
+   CAD X is the viewer's +X, CAD Y is its -Z and CAD Z is its +Y. A file made with Y up skips that turn.
+   The Up button switches between the two and the choice is remembered in this browser. ---- */
+/* UP.pref is the choice for designs (kept in this browser). UP.axis is what the main viewer shows right now: it equals
+   UP.pref for a design, and is the file's own choice for a file attached from the computer. Live chat cards always use UP.pref. */
+const UP = { axis: "z", pref: "z" };
+try { const u = localStorage.getItem("nitocad.up"); if (u === "y" || u === "z") UP.axis = UP.pref = u; } catch (_) { /* storage can be blocked */ }
+const upLabel = (up = UP.axis) => up === "z" ? "Z up" : "Y up";
+function upTurn(obj, up = UP.axis) { obj.rotation.x = up === "y" ? Math.PI / 2 : 0; return obj; }   // undoes the CAD turn already in the geometry
+const axisNames = (up = UP.axis) => up === "z" ? ["X", "Z", "Y"] : ["X", "Y", "Z"];               // names of the viewer's x, y and z
+function axesFor(up = UP.axis) {
+  const y = up === "z" ? [0, 0, -1] : [0, 1, 0], z = up === "z" ? [0, 1, 0] : [0, 0, 1];
+  return [{ name: "X", dir: [1, 0, 0], color: 0xE5484D }, { name: "Y", dir: y, color: 0x30A46C }, { name: "Z", dir: z, color: 0x3E63DD }];
+}
+function dimText(size, up = UP.axis) {
+  const n = axisNames(up), v = { [n[0]]: size.x, [n[1]]: size.y, [n[2]]: size.z };
+  const big = Math.max(size.x, size.y, size.z) >= 3000, f = (k) => big ? (k / 1000).toFixed(2) : k.toFixed(1);   /* civil parts read better in metres */
+  return `X ${f(v.X)} x Y ${f(v.Y)} x Z ${f(v.Z)} ${big ? "m" : "mm"}`;
+}
+function relabelSection() {
+  const n = axisNames();
+  [["x", `Width (${n[0]})`], ["y", `Height (${n[1]})`], ["z", `Depth (${n[2]})`]].forEach(([k, t]) => {
+    const b = document.querySelector(`#cvSheet [data-axis="${k}"]`); if (b) b.textContent = t;
+  });
+}
+function axisLabel(letter, color) {
+  const c = document.createElement("canvas"); c.width = c.height = 64;
+  const g = c.getContext("2d"); g.font = "600 44px 'IBM Plex Mono', monospace"; g.textAlign = "center"; g.textBaseline = "middle";
+  g.fillStyle = "#" + color.toString(16).padStart(6, "0"); g.fillText(letter, 32, 34);
+  const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true, toneMapped: false }));
+  sp.renderOrder = 12; return sp;
+}
+function axisGroup(len, labelScale, thin, up = UP.axis) {
+  const grp = new THREE.Group();
+  for (const a of axesFor(up)) {
+    const dir = new THREE.Vector3(...a.dir);
+    let bar;
+    if (thin) {
+      bar = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), dir.clone().multiplyScalar(len)]),
+        new THREE.LineBasicMaterial({ color: a.color, depthTest: false, transparent: true, opacity: 0.55, toneMapped: false }));
+    } else {
+      bar = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, len, 10), new THREE.MeshBasicMaterial({ color: a.color, toneMapped: false }));
+      bar.position.copy(dir.clone().multiplyScalar(len / 2));
+      bar.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+    }
+    bar.renderOrder = 11; grp.add(bar);
+    const sp = axisLabel(a.name, a.color); sp.position.copy(dir.clone().multiplyScalar(len * 1.22)); sp.scale.setScalar(labelScale); grp.add(sp);
+  }
+  return grp;
+}
+/* (Re)builds the axis lines in a scene and the gizmo scene. `rig` is the main viewer V or a live chat card. */
+function initAxes(rig, up = UP.axis) {
+  rig.axisMode = up;
+  if (rig.axesObj) { rig.scene.remove(rig.axesObj); disposeObject(rig.axesObj); }
+  rig.axesObj = axisGroup(46, 6, true, up); rig.axesObj.visible = rig.axesOn !== false; rig.scene.add(rig.axesObj);
+  if (!rig.gscene) { rig.gscene = new THREE.Scene(); rig.gcam = new THREE.PerspectiveCamera(32, 1, 0.1, 30); }
+  for (const o of [...rig.gscene.children]) { rig.gscene.remove(o); disposeObject(o); }
+  rig.gscene.add(axisGroup(1, 0.42, false, up));
+}
+/* the small orientation gizmo in the corner: drawn after the model, from the same viewing direction */
+function drawGizmo(rig, r, camera, target, maxSize) {
+  const size = r.getSize(rig.gSize || (rig.gSize = new THREE.Vector2()));
+  const s = Math.max(44, Math.min(maxSize, size.x * 0.28, size.y * 0.4)), pad = 8, y0 = size.y - s - pad;
+  rig.gcam.position.copy(camera.position).sub(target).normalize().multiplyScalar(4.4);
+  rig.gcam.up.copy(camera.up); rig.gcam.lookAt(0, 0, 0);
+  r.autoClear = false; r.setScissorTest(true);
+  r.setViewport(pad, y0, s, s); r.setScissor(pad, y0, s, s);
+  r.clearDepth(); r.render(rig.gscene, rig.gcam);
+  r.setScissorTest(false); r.setViewport(0, 0, size.x, size.y); r.autoClear = true;
+}
+/* Moves the main viewer to `up`: button text, section labels, axis lines and gizmo. */
+function syncUp(up) {
+  UP.axis = up;
+  const t = $("tUp"); if (t) { t.textContent = upLabel(); t.title = `Up axis: ${upLabel()}. Click to switch.`; }
+  relabelSection();
+  if (V.ready && V.axisMode !== up) initAxes(V, up);
+}
+/* A file attached from the computer starts with its format's usual up axis (STL: Z, OBJ, GLB, 3MF: Y). Switching turns it in place. */
+const fileTurn = (f) => f.up === f.native ? 0 : (f.native === "z" ? Math.PI / 2 : -Math.PI / 2);
+function refitFile() { const f = V.fileCtx; if (f) { f.pivot.rotation.x = fileTurn(f); viewerPlace(f.pivot, true); } }
+/* forMain: the button in the main viewer tools. If it is showing an attached file, only that file turns.
+   Otherwise (or from a live chat card) the choice is for designs and is remembered. */
+function toggleUp(forMain = true) {
+  if (forMain && V.fileCtx) { V.fileCtx.up = V.fileCtx.up === "z" ? "y" : "z"; syncUp(V.fileCtx.up); refitFile(); return; }
+  UP.pref = UP.pref === "z" ? "y" : "z";
+  try { localStorage.setItem("nitocad.up", UP.pref); } catch (_) { /* fine */ }
+  if (!V.fileCtx) syncUp(UP.pref);
+  const c = chat();
+  if (c) { mountCardViewers(c); if (V.mesh && !V.fileCtx && S.activePartId) viewerShow(partOf(c, S.activePartId)); }
+}
 function viewerInit() {
   if (V.ready) return;
   const el = $("cvStage");
@@ -430,6 +477,7 @@ function viewerInit() {
   const dl = new THREE.DirectionalLight(0xffffff, 1.6); dl.position.set(60, 90, 50); V.scene.add(dl);
   applyRealisticLook(V.scene, V.renderer, dl);
   V.gridObj = new THREE.GridHelper(160, 16, 0xb7c3d1, 0xd5dde6); V.scene.add(V.gridObj);
+  V.axesOn = true; initAxes(V);
   new ResizeObserver(viewerFit).observe(el);
   V.ready = true;
 }
@@ -441,7 +489,7 @@ function viewerFit() {
   const half = V.orthoHalf || 50, a = w / h;
   Object.assign(V.ortho, { left: -half * a, right: half * a, top: half, bottom: -half }); V.ortho.updateProjectionMatrix();
 }
-function viewerLoop() { if (!V.running) return; requestAnimationFrame(viewerLoop); V.controls.update(); V.renderer.render(V.scene, V.camera); }
+function viewerLoop() { if (!V.running) return; requestAnimationFrame(viewerLoop); V.controls.update(); V.renderer.render(V.scene, V.camera); if (V.axesOn) drawGizmo(V, V.renderer, V.camera, V.controls.target, 96); }
 function viewerReset() {
   if (!V.ready) return;
   const y = V.mesh ? V.mesh.userData.midY || 0 : 0;
@@ -555,8 +603,8 @@ function viewerStatus(msg, loading) {
   el.querySelector("span").textContent = msg;
 }
 function applyWire() { if (V.mesh) setWireframe(V.mesh, V.wire); }
-function viewerPlace(obj) {
-  if (V.mesh) { V.scene.remove(V.mesh); disposeObject(V.mesh); }
+function viewerPlace(obj, keep) {
+  if (V.mesh) { V.scene.remove(V.mesh); if (!keep) disposeObject(V.mesh); }
   const wrap = new THREE.Group(); wrap.add(obj);
   const b0 = new THREE.Box3().setFromObject(wrap), size = b0.getSize(new THREE.Vector3());
   const k = 70 / (Math.max(size.x, size.y, size.z) || 1);
@@ -566,11 +614,10 @@ function viewerPlace(obj) {
   wrap.userData.midY = (b1.max.y - b1.min.y) / 2;
   V.mesh = wrap; V.scene.add(wrap); applyWire(); viewerReset(); viewerStatus("");
   V.bounds = new THREE.Box3().setFromObject(wrap); V.islands = undefined; resetInspect();
-  const d = $("cvDim"); d.hidden = false; const big = Math.max(size.x, size.y, size.z) >= 3000;   /* civil parts read better in metres */
-  const fmt = (v) => big ? (v / 1000).toFixed(2) : v.toFixed(1);
-  d.textContent = `${fmt(size.x)} x ${fmt(size.z)} x ${fmt(size.y)} ${big ? "m" : "mm"}`;
+  const d = $("cvDim"); d.hidden = false; d.textContent = dimText(size);
 }
 async function viewerShow(part) {
+  V.fileCtx = null; syncUp(UP.pref);
   $("cvEmpty").hidden = !!part;
   if (!part) { if (V.mesh) { V.scene.remove(V.mesh); V.mesh = null; } $("cvDim").hidden = true; return; }
   viewerInit(); viewerFit();
@@ -583,7 +630,7 @@ async function viewerShow(part) {
     else {
       const geo = prepareStlGeometry(new STLLoader().parse(await fetchStl(part, false)));
       geo.center(); geo.rotateX(-Math.PI / 2);
-      obj = buildPartObject(geo, part.material);
+      obj = upTurn(buildPartObject(geo, part.material));
     }
     if (token !== V.token) return;
     viewerPlace(obj);
@@ -645,13 +692,12 @@ function partCardHtml(c, part, isLatest, isNewest) {
     const label = `${esc(k.replace(/_mm$/, "").replace(/_/g, " "))} ${esc(val)}${/_mm$/.test(k) ? " mm" : ""}`;
     return editable && typeof val === "number" ? `<span class="spec-chip editable" role="button" tabindex="0" data-edit-param="${esc(k)}" data-val="${esc(val)}" title="Tap to change">${label}</span>` : `<span class="spec-chip">${label}</span>`;
   }).join("");
-  const anchored = part.anchor ? '<span class="ver anchored">anchored</span>' : "";
   return `<div class="part"><div class="part-3d${isNewest ? " live" : ""}" data-3d="${part.id}">${thumbSvg(kindOf(part))}<span class="p3d-hint">${isNewest ? "Tap the model to rotate it · tap a value to change it" : ""}</span></div>` +
     `<button class="part-top" data-part="${part.id}" aria-label="Open ${esc(part.title)} in viewer">` +
-    `<div class="part-meta"><div class="part-title">${esc(part.title)} <span class="ver">v${v}</span>${anchored}</div><div class="part-specs">${chips}</div></div>` +
+    `<div class="part-meta"><div class="part-title">${esc(part.title)} <span class="ver">v${v}</span></div><div class="part-specs">${chips}</div></div>` +
     `<span class="part-open">Open <svg class="icon" viewBox="0 0 24 24" style="width:14px;height:14px"><path d="M9 6l6 6-6 6"/></svg></span></button>` +
     `<div class="part-actions">` + (part.paid
-      ? `<button class="chip" data-export="${part.id}">Download files</button>${isCodegen(part) ? "" : `<button class="chip" data-part="${part.id}" data-tab="chain">Anchor on-chain</button>`}`
+      ? `<button class="chip" data-export="${part.id}">Download files</button>`
       : `<button class="btn btn-primary btn-sm" data-generate="${part.id}">Generate files</button><span class="preview-tag">Free preview</span>`) + `</div></div>` +
     (isLatest ? followupsHtml(part) : "");
 }
@@ -723,11 +769,11 @@ async function stlBuffer(part) {
   if (!stlCache.has(key)) stlCache.set(key, fetchStl(part, false).catch((e) => { stlCache.delete(key); throw e; }));
   return (await stlCache.get(key)).slice(0);
 }
-async function partModel(part) {
+async function partModel(part, up = UP.pref) {
   if (part.demoKind) { await sleep(120); return Demo.geometry(part.demoKind, part.params); }
   const geo = prepareStlGeometry(new STLLoader().parse(await stlBuffer(part)));
   geo.center(); geo.rotateX(-Math.PI / 2);
-  return buildPartObject(geo, part.material);
+  return upTurn(buildPartObject(geo, part.material), up);
 }
 function fitModel(obj) {
   const wrap = new THREE.Group(); wrap.add(obj);
@@ -737,10 +783,7 @@ function fitModel(obj) {
   wrap.position.set(-c.x, -b1.min.y, -c.z);
   return { wrap, midY: (b1.max.y - b1.min.y) / 2, size };
 }
-function sizeLabel(size) {
-  const big = Math.max(size.x, size.y, size.z) >= 3000, f = (v) => big ? (v / 1000).toFixed(2) : v.toFixed(1);
-  return `${f(size.x)} x ${f(size.z)} x ${f(size.y)} ${big ? "m" : "mm"}`;
-}
+function sizeLabel(size) { return dimText(size, UP.pref); }
 function newStage(w, h, preserve) {
   const scene = new THREE.Scene(); scene.background = new THREE.Color(0xEDF2F4);
   const camera = new THREE.PerspectiveCamera(40, w / h, 0.1, 2000);
@@ -756,17 +799,25 @@ const snapCache = new Map();
 function closeLiveCard() {
   if (!liveCard) return;
   const l = liveCard; liveCard = null; l.dead = true;
-  try { document.removeEventListener("pointerdown", l.away, true); l.ro.disconnect(); l.controls.dispose(); if (l.model) disposeObject(l.model); l.renderer.dispose(); l.renderer.forceContextLoss(); l.renderer.domElement.remove(); } catch (e) { /* already gone */ }
+  try { document.removeEventListener("pointerdown", l.away, true); l.ro.disconnect(); l.controls.dispose(); if (l.model) disposeObject(l.model); if (l.axesObj) disposeObject(l.axesObj); if (l.gscene) disposeObject(l.gscene); l.renderer.dispose(); l.renderer.forceContextLoss(); l.renderer.domElement.remove(); } catch (e) { /* already gone */ }
 }
 async function startLiveCard(host, part) {
   const w = host.clientWidth || 320, h = host.clientHeight || 230;
   const { scene, camera, renderer } = newStage(w, h, false);
   const dom = renderer.domElement; dom.className = "p3d-canvas"; host.appendChild(dom);
   const controls = new OrbitControls(camera, dom); controls.enableDamping = true; controls.dampingFactor = 0.12;
-  const live = { renderer, controls, model: null, dead: false, until: 0, running: false, active: false };
-  liveCard = live;
+  const live = { scene, renderer, controls, model: null, dead: false, until: 0, running: false, active: false, axesOn: true };
+  liveCard = live; initAxes(live, UP.pref);
   /* Passive until tapped, so a swipe over the model still scrolls the chat. */
   controls.enabled = false; dom.style.touchAction = "pan-y";
+  /* Axes and Up buttons. They sit on top of the canvas, so their events must not reach the card (tap to activate) or the face picker. */
+  const mkBtn = (cls, text, title) => {
+    const b = document.createElement("button"); b.type = "button"; b.className = "p3d-btn " + cls; b.textContent = text; b.title = title;
+    ["pointerdown", "pointerup", "click"].forEach((ev) => b.addEventListener(ev, (e) => e.stopPropagation())); host.appendChild(b); return b;
+  };
+  const axBtn = mkBtn("p3d-axes", "Axes", "Show or hide the X, Y and Z axes"); axBtn.setAttribute("aria-pressed", "true");
+  axBtn.addEventListener("click", () => { live.axesOn = !live.axesOn; axBtn.setAttribute("aria-pressed", String(live.axesOn)); if (live.axesObj) live.axesObj.visible = live.axesOn; kick(100); });
+  if (!part.demoKind) { const upBtn = mkBtn("p3d-up", upLabel(UP.pref), "Which axis points up in the file. Click to switch."); upBtn.addEventListener("click", () => toggleUp(false)); }
   const hint = host.querySelector(".p3d-hint"), done = document.createElement("button");
   done.type = "button"; done.className = "p3d-done"; done.textContent = "Done"; host.appendChild(done);
   const setActive = (on) => {
@@ -834,6 +885,7 @@ async function startLiveCard(host, part) {
   const frame = () => {
     if (live.dead) return;
     controls.update(); renderer.render(scene, camera);
+    if (live.axesOn) drawGizmo(live, renderer, camera, controls.target, 64);
     if (performance.now() < live.until) requestAnimationFrame(frame); else live.running = false;
   };
   const kick = (ms) => { live.until = Math.max(live.until, performance.now() + ms); if (!live.running && !live.dead) { live.running = true; requestAnimationFrame(frame); } };
@@ -853,7 +905,7 @@ async function startLiveCard(host, part) {
   } catch (e) { console.warn("3D card could not load:", e); host.classList.add("failed"); }
 }
 function snapshotOf(part) {
-  const key = part.id + ":" + (part.jobId || part.demoKind || "");
+  const key = part.id + ":" + (part.jobId || part.demoKind || "") + ":" + UP.pref;
   if (snapCache.has(key)) return Promise.resolve(snapCache.get(key));
   snapChain = snapChain.then(async () => {
     if (!snapRig) snapRig = newStage(480, 300, true);
@@ -928,8 +980,14 @@ function diffHtml(d) {
 /* Guidance from the AI as tappable questions. A tap sends the question and the answer together. */
 function choicesHtml(choices, m) {
   if (choices.length && choices[0].card) return choiceCardHtml(choices, m);
-  return '<div class="choices">' + choices.map((q) => `<div class="choice-q"><p>${esc(q.question)}</p><div class="followups">` +
-    q.options.map((o) => `<button class="chip" data-say="${esc(q.question + " " + o)}">${esc(o)}</button>`).join("") + "</div></div>").join("") + "</div>";
+  /* q.say[i] is the exact message option i sends (a template's next steps); q.needs_ai[i] hides an option that the Engine
+     plan cannot do. Without them an option sends "question option", as before. */
+  return '<div class="choices">' + choices.map((q) => {
+    const chips = q.options.map((o, i) => ({ o, i })).filter(({ i }) => !(q.needs_ai && q.needs_ai[i] && onEngine()));
+    if (!chips.length) return "";
+    return `<div class="choice-q"><p>${esc(q.question)}</p><div class="followups">` +
+      chips.map(({ o, i }) => `<button class="chip" data-say="${esc(q.say && q.say[i] ? q.say[i] : q.question + " " + o)}">${esc(o)}</button>`).join("") + "</div></div>";
+  }).join("") + "</div>";
 }
 
 /* The questions-before-building card: every question at once, pick any, add details, Build or Skip. Nothing is sent
@@ -965,10 +1023,10 @@ function allowanceMsg() {
   }
   return "You have used all your credits. Upgrade to keep going.";
 }
-function outOfAllowance() { toast(allowanceMsg()); openCredits(); }
+function outOfAllowance() { toast(allowanceMsg()); }
 function needCreditsHtml() {
   const sub = !!S.meter && (S.meter.plan === "pro" || S.meter.plan === "max");
-  return `<div class="need-credits"><b>${sub ? "AI allowance used" : "You have used all your credits"}</b><p>${esc(allowanceMsg())}</p><button class="btn btn-primary btn-sm" data-buy="open">${sub ? "Add usage" : "Upgrade to continue"}</button> <a class="btn btn-ghost btn-sm" href="pricing.html">See plans</a></div>`;
+  return `<div class="need-credits"><b>${sub ? "AI allowance used" : "You have used all your credits"}</b><p>${esc(allowanceMsg())}</p><a class="btn btn-primary btn-sm" href="pricing.html">${sub ? "See plans" : "Upgrade to continue"}</a></div>`;
 }
 function scrollEnd(smooth) { const t = $("thread"); t.scrollTo({ top: t.scrollHeight, behavior: smooth ? "smooth" : "auto" }); }
 
@@ -1010,9 +1068,10 @@ function renderCanvas() {
     $("cvPrev").hidden = $("cvNext").hidden = sel.hidden;
     $("cvPrev").disabled = sel.selectedIndex <= 0; $("cvNext").disabled = sel.selectedIndex >= vers.length - 1;
   } else { sel.hidden = true; $("cvPrev").hidden = $("cvNext").hidden = true; }
+  if (S.tab === "chain") S.tab = "specs";
   document.querySelectorAll(".tab").forEach((t) => t.setAttribute("aria-selected", t.dataset.tab === S.tab ? "true" : "false"));
   const panel = $("panel");
-  if (!part) { panel.innerHTML = '<div class="chat-empty">Build a part to see its specs, files and on-chain record here.</div>'; return; }
+  if (!part) { panel.innerHTML = '<div class="chat-empty">Build a part to see its specs and files here.</div>'; return; }
   if (S.tab === "specs") {
     let rows = `<div class="row"><span>part_type</span><span>${esc(part.partType)}</span></div>`;
     Object.entries(part.params).forEach(([k, v]) => { rows += `<div class="row"><span>${esc(k)}</span><span>${esc(v)}</span></div>`; });
@@ -1034,18 +1093,6 @@ function renderCanvas() {
       return `<div class="file${locked ? " locked" : ""}"><span class="ext">${n}</span><div class="what"><b>${n} file</b><span>${locked ? "Unlocks when you press Generate" : d}</span></div><button class="btn btn-ghost btn-sm" ${locked ? "disabled" : `data-dl="${f}"`}>${locked ? "Locked" : "Download"}</button></div>`;
     }).join("") + (isVehicle(part) ? vehicleFileRows(part, lock) : "") + (part.partType === "pcb_board" ? [["KICAD", "pcb:kicad", "KiCad project", "Open and edit in KiCad"], ["GERBER", "pcb:gerbers", "Gerber and drill files", "Send to a circuit board maker"], ["BOM", "pcb:bom", "Parts list", "CSV of every part"], ["POS", "pcb:pos", "Part positions", "For assembly machines"]].map(([n, f, t, d]) =>
       `<div class="file${lock ? " locked" : ""}"><span class="ext">${n}</span><div class="what"><b>${t}</b><span>${lock ? "Unlocks when you press Generate" : d}</span></div><button class="btn btn-ghost btn-sm" ${lock ? "disabled" : `data-dl="${f}"`}>${lock ? "Locked" : "Download"}</button></div>`).join("") : "") + "</div>" + (part.partType === "pcb_board" && !lock ? '<div class="note"><p>Board files are built when you download them and can take up to a minute. Gerber, drill and part-position files need KiCad on the server.</p></div>' : "") + (lock ? "" : checkCardHtml(part));
-  } else if (isCodegen(part)) {
-    panel.innerHTML = '<div class="note"><b>No on-chain record for code parts yet</b><p>Anchoring needs the standard build record, which a part written as code does not have. Downloads and the manufacturability check still work.</p></div>';
-  } else {
-    if (part.anchor) {
-      const tx = part.anchor.anchor_tx || "";
-      panel.innerHTML = `<div class="chain"><div class="kick">Anchored on BOT Chain</div><b>This version has a permanent record</b><div class="tx">Tx ${esc(tx.slice(0, 12))}...${esc(tx.slice(-8))}</div><a class="btn btn-primary btn-sm" target="_blank" rel="noopener" href="${esc(part.anchor.explorer_url || "https://scan.botchain.ai")}">View on explorer</a></div>`;
-    } else {
-      panel.innerHTML = `<div class="chain"><div class="kick">Optional · BOT Chain</div><b>Anchor this version on-chain</b><ul>` +
-        `<li>A timestamped record nobody can edit later, including us.</li><li>Your wallet is stored as the submitter, so you can show you registered it first.</li>` +
-        `<li>Anyone can check the parameters and STEP file hashes on the explorer.</li></ul>` +
-        `<div class="fine">Costs a small network fee from your wallet. Separate from downloading.</div><button class="btn btn-primary" id="anchorBtn">Anchor on BOT Chain</button></div>`;
-    }
   }
 }
 /* ============================================================ code parts (written as code by the code builder)
@@ -1517,11 +1564,14 @@ async function meshObject(file) {
   else { const { ThreeMFLoader } = await import("three/addons/loaders/3MFLoader.js"); obj = new ThreeMFLoader().parse(buf); }
   return { obj, buf };
 }
-function showInViewer(obj, title) {
+function showInViewer(obj, title, native = "z") {
   $("app").classList.add("canvas-open"); S.activePartId = null; renderCanvas();
   $("cvTitle").textContent = title; $("cvEmpty").hidden = true;
   viewerInit(); viewerFit(); if (!V.running) { V.running = true; viewerLoop(); }
-  V.token++; viewerPlace(obj);
+  V.token++;
+  const pivot = new THREE.Group(); pivot.add(obj);
+  V.fileCtx = { pivot, native, up: native }; syncUp(native); pivot.rotation.x = 0;
+  viewerPlace(pivot);
   if (innerWidth <= 1180) $("scrim").classList.add("on");
 }
 function b64ToBuf(b64) { const bin = atob(b64), u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return u.buffer; }
@@ -1629,7 +1679,7 @@ async function attachFile(file) {
       const id = uid(); fileStore[id] = { buffer: buf };
       c.messages.push({ id, role: "assistant", text: "", fileCard: { name: file.name, kind: ext, size: fmtBytes(file.size), rows: [], dims: [], features: [], missing: [], notes: [], warnings: ["Mesh files show shape only. To build a part from it, describe it in the chat."], description: "", local: true, mesh: ext === "stl" } });
       hideWorking(); S.busy = false; renderThread(); scrollEnd(true);
-      showInViewer(obj, file.name);
+      showInViewer(obj, file.name, extOf(file.name) === "stl" ? "z" : "y");
       return;
     }
     if (!SERVER_EXT.has(ext)) { hideWorking(); S.busy = false; return bad("This file type is not supported. Use STEP, IGES, BREP, DXF, SVG, KiCad (.kicad_pcb), Gerber (a .zip or single layer), PDF, PNG, JPG, WEBP, STL, OBJ, GLB or 3MF."); }
@@ -1717,23 +1767,8 @@ async function openTemplates() {
   });
 }
 
-async function openCredits() {
-  let cfg = null;
-  try { cfg = DEMO ? { credit_price_bot: 0.01, pack_1000_price_bot: 1, pack_1000_credits: 1000, pack_10000_price_bot: 10, pack_10000_credits: 10000 } : await Auth.getChainConfig(); } catch (e) { toast("Could not load pricing. Try again shortly."); return; }
-  const tiers = [["single", "Small boost", cfg.credit_price_bot], ["pack_1000", "Medium boost", cfg.pack_1000_price_bot], ["pack_10000", "Large boost", cfg.pack_10000_price_bot]];
-  const m = document.createElement("div"); m.className = "modal"; m.setAttribute("role", "dialog"); m.setAttribute("aria-modal", "true");
-  m.innerHTML = `<div class="modal-card"><h3>Add AI usage</h3><p>Paid in native BOT on BOT Chain. A boost adds AI usage on top of your plan and never expires. Every export format is included. Prefer a subscription? See <a href="pricing.html">plans</a>.</p>` +
-    tiers.map(([id, label, price]) => `<div class="tier"><div><b>${label}</b><span>${price} BOT</span></div><button class="btn btn-primary btn-sm" data-tier="${id}">Buy</button></div>`).join("") +
-    `<div class="modal-foot"><button class="btn btn-ghost btn-sm" data-close>Close</button></div></div>`;
-  document.body.appendChild(m);
-  m.addEventListener("click", async (e) => {
-    if (e.target === m || e.target.closest("[data-close]")) { m.remove(); return; }
-    const b = e.target.closest("[data-tier]"); if (!b) return;
-    b.disabled = true; const t = b.textContent; b.textContent = "Confirm in wallet";
-    try { if (DEMO) { await sleep(900); } else { await Backend.buyCredits(b.dataset.tier); } await refreshBalance(); toast("Usage added."); m.remove(); }
-    catch (err) { toast(err.message || "Purchase failed."); b.disabled = false; b.textContent = t; }
-  });
-}
+// AI usage is bought through a plan now, so the usage chip and "out of allowance" prompts go to the plans page.
+function openCredits() { window.location.href = "pricing.html"; }
 
 /* ============================================================ assembly view */
 const ASM_STARTER = { name: "wheel_corner_module", root: "subframe",
@@ -1855,6 +1890,23 @@ $("expT").addEventListener("input", (e) => { if (V.exp) explodeApply(e.target.va
 function stepVersion(d) { const sel = $("cvVersion"), i = sel.selectedIndex + d; if (i < 0 || i >= sel.options.length) return; sel.selectedIndex = i; sel.dispatchEvent(new Event("change")); }
 $("cvPrev").addEventListener("click", () => stepVersion(-1)); $("cvNext").addEventListener("click", () => stepVersion(1));
 $("tGrid").addEventListener("click", (e) => { V.grid = !V.grid; e.currentTarget.setAttribute("aria-pressed", V.grid); if (V.gridObj) V.gridObj.visible = V.grid; });
+$("tUp").addEventListener("click", () => toggleUp(true));
+relabelSection(); $("tUp").textContent = upLabel(); $("tUp").title = `Up axis: ${upLabel()}. Click to switch.`;
+$("tAxes").addEventListener("click", (e) => { V.axesOn = !V.axesOn; e.currentTarget.setAttribute("aria-pressed", String(V.axesOn)); if (V.axesObj) V.axesObj.visible = V.axesOn; });
+
+/* ---- symbol row under the prompt box: insert Greek letters and engineering signs at the cursor ---- */
+const SYMBOLS = [["α", "alpha"], ["β", "beta"], ["γ", "gamma"], ["δ", "delta"], ["θ", "theta"], ["φ", "phi"], ["ω", "omega"], ["π", "pi"],
+  ["µ", "micro"], ["Ω", "ohm"], ["Δ", "delta, change"], ["Ø", "diameter"], ["°", "degrees"], ["±", "plus or minus"], ["×", "times"]];
+$("symRow").innerHTML = SYMBOLS.map(([ch, name]) => `<button type="button" data-sym="${ch}" aria-label="${name}" title="${name}">${ch}</button>`).join("");
+$("symBtn").addEventListener("click", (e) => {
+  const row = $("symRow"); row.hidden = !row.hidden; e.currentTarget.setAttribute("aria-expanded", String(!row.hidden));
+});
+$("symRow").addEventListener("mousedown", (e) => { if (e.target.closest("[data-sym]")) e.preventDefault(); });   // keep the cursor in the box
+$("symRow").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-sym]"); if (!b) return;
+  const t = $("input"), a = t.selectionStart ?? t.value.length, z = t.selectionEnd ?? a;
+  t.setRangeText(b.dataset.sym, a, z, "end"); t.focus(); t.dispatchEvent(new Event("input", { bubbles: true }));
+});
 $("cvVersion").addEventListener("change", (e) => { S.activePartId = e.target.value; renderCanvas(); viewerShow(partOf(chat(), S.activePartId)); });
 document.querySelector(".tabs").addEventListener("click", (e) => { const t = e.target.closest(".tab"); if (!t) return; S.tab = t.dataset.tab; renderCanvas(); });
 
@@ -1932,23 +1984,11 @@ $("panel").addEventListener("click", async (e) => {
     dl.disabled = true; const t = dl.textContent; dl.textContent = "Building";
     try { await Backend.exportFile(part, dl.dataset.dl); } catch (err) { toast(err.message || "Download failed."); }
     dl.disabled = false; dl.textContent = t; return;
-  }
-  if (e.target.closest("#anchorBtn")) {
-    const b = $("anchorBtn"); b.disabled = true; b.textContent = "Confirm in your wallet";
-    try { part.anchor = await Backend.anchor(part); save(); toast("Anchored on BOT Chain."); renderCanvas(); renderThread(); }
-    catch (err) { toast(err.message || "Anchor not completed."); b.disabled = false; b.textContent = "Anchor on BOT Chain"; }
-  }
-});
+  }});
 
 
 /* ============================================================ gate + routing */
 function showGate(show) { $("gate").hidden = !show; $("app").hidden = show; }
-async function gateWallet() {
-  const b = $("gateWallet"), err = $("gateErr"); err.textContent = ""; b.disabled = true; const t = b.textContent; b.textContent = "Waiting for your wallet";
-  try { await Auth.signInWithWallet(); } catch (e) { err.textContent = e.message || "Sign-in failed."; }
-  b.disabled = false; b.textContent = t;
-}
-$("gateWallet").addEventListener("click", gateWallet);
 Auth.onError = (e) => { $("gateErr").textContent = (e && e.message) || "Sign-in failed."; };
 
 function renderAll() {
@@ -1959,7 +1999,7 @@ function renderAll() {
 function fillAccount() {
   const s = Auth.getSession(), name = DEMO ? "Demo account" : Auth.displayName(s);
   $("acctName").textContent = name; $("avatar").textContent = (name.replace(/^0x/, "")[0] || "N");
-  $("acctSub").textContent = DEMO ? "Sample data" : (s && s.email ? "Google" : "Wallet");
+  $("acctSub").textContent = DEMO ? "Sample data" : (s && s.email ? "Google" : "Signed in");
 }
 /* ============================================================ AI picker */
 const DEMO_AI = { plan: "pro", default: "basic:deepseek", tiers: [

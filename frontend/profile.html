@@ -230,7 +230,6 @@
     .navlinks{display:none;}
     .burger{display:flex;}
     nav.wrap > a.btn-primary{display:none;}
-    #walletNavBtn{display:none;}
     .wallet-card{flex-direction:column;align-items:flex-start;}
     .wallet-card .actions{margin-left:0;}
   }
@@ -238,10 +237,10 @@
 <link rel="stylesheet" href="theme.css">
 <script src="theme.js"></script>
 <script src="config.js"></script>
+<script src="auth.js"></script>
 <!-- seo:begin -->
 <meta name="robots" content="noindex, follow">
 <!-- seo:end -->
-<script>window.va=window.va||function(){(window.vaq=window.vaq||[]).push(arguments);};</script>
 <script defer src="/_vercel/insights/script.js"></script>
 </head>
 <body>
@@ -264,7 +263,6 @@
       <li><a href="index.html#demo">Demo</a></li>
       <li><a href="profile.html" class="active">My Projects</a></li>
     </ul>
-    <button id="walletNavBtn" class="btn btn-ghost" style="margin-right:8px;">Connect Wallet</button>
     <a href="index.html#demo" class="btn btn-primary" style="margin-right:8px;">Try NitoCAD</a>
     <button class="burger" id="burger" aria-label="Open menu" aria-expanded="false" aria-controls="mobileMenu">
       <span></span><span></span><span></span>
@@ -275,7 +273,6 @@
     <a href="index.html#pricing">Pricing</a>
     <a href="index.html#demo">Demo</a>
     <a href="profile.html">My Projects</a>
-    <button id="walletNavBtnMobile" class="btn btn-ghost">Connect Wallet</button>
     <a href="index.html#demo" class="btn btn-primary">Try NitoCAD</a>
   </div>
 </header>
@@ -288,14 +285,14 @@
 
 <section class="wrap" style="padding-bottom:90px;">
   <div id="connectPrompt" class="connect-prompt" style="display:none;">
-    <p>Connect your wallet to view your projects and AI usage.</p>
-    <button id="profileConnectBtn" class="btn btn-primary">Connect Wallet</button>
+    <p>Sign in to view your projects and AI usage.</p>
+    <button id="profileConnectBtn" class="btn btn-primary" style="display:none;">Sign in with Google</button>
   </div>
 
   <div id="profileContent" style="display:none;">
     <div class="wallet-card">
       <div>
-        <div class="label">Connected wallet</div>
+        <div class="label">Signed in as</div>
         <div id="walletAddressDisplay" class="value">—</div>
       </div>
       <div>
@@ -306,7 +303,7 @@
         <button class="btn btn-ghost" onclick="handleBuyCreditsClick('single')">Small boost</button>
         <button class="btn btn-ghost" onclick="handleBuyCreditsClick('pack_1000')">Medium boost</button>
         <button class="btn btn-ghost" onclick="handleBuyCreditsClick('pack_10000')">Large boost</button>
-        <button class="btn btn-ghost" onclick="handleDisconnectClick()">Disconnect</button>
+        <button class="btn btn-ghost" onclick="handleDisconnectClick()">Sign out</button>
       </div>
       <p id="profileStatus" class="demo-status"></p>
     </div>
@@ -469,13 +466,7 @@
   function shortAddress(addr){
     return addr.slice(0, 6) + '…' + addr.slice(-4);
   }
-  function updateWalletUI(){
-    const base = getApiBase();
-    const session = base ? getWalletSession(base) : null;
-    const label = session ? shortAddress(session.wallet_address) : 'Connect Wallet';
-    [document.getElementById('walletNavBtn'), document.getElementById('walletNavBtnMobile')]
-      .forEach(btn => { if(btn) btn.textContent = label; });
-  }
+  function updateWalletUI(){ /* sign-in button now lives on the main page and in the gate below */ }
 
   async function signInWithWallet(base){
     const account = await connectWallet(base);
@@ -866,8 +857,8 @@
     connectPromptEl.style.display = 'none';
     profileContentEl.style.display = 'block';
     profileStatusEl.textContent = '';
-    walletAddressEl.textContent = shortAddress(session.wallet_address);
-    walletAddressEl.title = session.wallet_address;
+    walletAddressEl.textContent = session.email || (session.wallet_address ? shortAddress(session.wallet_address) : 'Signed in');
+    walletAddressEl.title = session.email || session.wallet_address || '';
 
     showUsage(await fetchUsage(base));
 
@@ -879,7 +870,7 @@
     profileStatusEl.classList.remove('err');
     try {
       let session = getWalletSession(base);
-      if (!session) session = await signInWithWallet(base);
+      if (!session) throw new Error('Sign in first.');
       const cfg = await getChainConfig(base);
       const priceBot = tier === 'single' ? cfg.credit_price_bot
         : tier === 'pack_1000' ? cfg.pack_1000_price_bot
@@ -920,34 +911,10 @@
     loadProfile();
   };
 
-  async function handleWalletNavClick(){
-    const base = getApiBase();
-    const existing = getWalletSession(base);
-    if (existing) {
-      if (window.confirm(`Connected as ${existing.wallet_address}. Disconnect?`)) {
-        await handleDisconnectClick();
-      }
-      return;
-    }
-    try {
-      await signInWithWallet(base);
-      loadProfile();
-    } catch (err) {
-      alert('Wallet sign-in failed: ' + err.message);
-    }
-  }
-  document.getElementById('walletNavBtn').addEventListener('click', handleWalletNavClick);
-  document.getElementById('walletNavBtnMobile').addEventListener('click', handleWalletNavClick);
 
-  document.getElementById('profileConnectBtn').addEventListener('click', async function(){
-    const base = getApiBase();
-    try {
-      await signInWithWallet(base);
-      loadProfile();
-    } catch (err) {
-      alert('Wallet sign-in failed: ' + err.message);
-    }
-  });
+  window.NitoAuth.onError = function(err){ alert('Sign-in failed: ' + (err && err.message ? err.message : err)); };
+  window.NitoAuth.onChange(function(){ loadProfile(); });
+  window.NitoAuth.initGoogle([document.getElementById('profileConnectBtn')]);
 
   loadProfile();
 })();

@@ -105,7 +105,6 @@
 <meta name="twitter:description" content="NitoCAD plans: start free, or subscribe to Pro or Max for unlimited projects, Expert AI and every export format, including STEP, IGES, DXF and PDF.">
 <meta name="twitter:image" content="https://nitocad.vercel.app/og-image.png">
 <!-- seo:end -->
-<script>window.va=window.va||function(){(window.vaq=window.vaq||[]).push(arguments);};</script>
 <script defer src="/_vercel/insights/script.js"></script>
 </head>
 <body>
@@ -222,8 +221,7 @@
   <h3>Sign in to continue</h3>
   <p>Sign in first so your plan is attached to your account.</p>
   <div class="row">
-    <button type="button" class="btn btn-primary" id="si-wallet">Connect wallet</button>
-    <button type="button" class="btn btn-ghost" id="si-google" style="display:none">Sign in with Google</button>
+    <button type="button" class="btn btn-primary" id="si-google" style="display:none">Sign in with Google</button>
     <button type="button" class="btn btn-ghost" id="si-cancel">Cancel</button>
   </div>
 </dialog>
@@ -410,10 +408,6 @@
       btn.addEventListener("click", function () { requireSession({ kind: "plan", plan: btn.dataset.subscribe }); });
     });
     $("#si-cancel").addEventListener("click", function () { $("#signin").close(); state.pending = null; });
-    $("#si-wallet").addEventListener("click", function () {
-      Auth.signInWithWallet().then(function () { $("#signin").close(); proceed(); })
-        .catch(function (e) { $("#signin").close(); say(e.message || "Sign-in failed.", true); });
-    });
     $("#em-cancel").addEventListener("click", function () { $("#emailbox").close(); state.pending = null; });
     $("#em-go").addEventListener("click", function () {
       var v = $("#em-input").value.trim();

@@ -276,7 +276,6 @@
     .navlinks{display:none;}
     .burger{display:flex;}
     nav.wrap > a.btn-primary{display:none;}
-    #walletNavBtn{display:none;}
     .wallet-card{flex-direction:column;align-items:flex-start;}
     .wallet-card .actions{margin-left:0;}
   }
@@ -290,10 +289,10 @@
 <link rel="stylesheet" href="theme.css">
 <script src="theme.js"></script>
 <script src="config.js"></script>
+<script src="auth.js"></script>
 <!-- seo:begin -->
 <meta name="robots" content="noindex, follow">
 <!-- seo:end -->
-<script>window.va=window.va||function(){(window.vaq=window.vaq||[]).push(arguments);};</script>
 <script defer src="/_vercel/insights/script.js"></script>
 </head>
 <body>
@@ -318,7 +317,6 @@
       <li><a href="profile.html">My Projects</a></li>
       <li><a href="refine.html">Prompt Refine</a></li>
     </ul>
-    <button id="walletNavBtn" class="btn btn-ghost" style="margin-right:8px;">Connect Wallet</button>
     <a href="index.html#demo" class="btn btn-primary" style="margin-right:8px;">Try NitoCAD</a>
     <button class="burger" id="burger" aria-label="Open menu" aria-expanded="false" aria-controls="mobileMenu">
       <span></span><span></span><span></span>
@@ -331,7 +329,6 @@
     <a href="preview.html">Free Preview</a>
     <a href="profile.html">My Projects</a>
     <a href="refine.html">Prompt Refine</a>
-    <button id="walletNavBtnMobile" class="btn btn-ghost">Connect Wallet</button>
     <a href="index.html#demo" class="btn btn-primary">Try NitoCAD</a>
   </div>
 </header>
@@ -547,13 +544,7 @@ import { materialFor } from "./viewer-look.js";
   function shortAddress(addr){
     return addr.slice(0, 6) + '…' + addr.slice(-4);
   }
-  function updateWalletUI(){
-    const base = getApiBase();
-    const session = base ? getWalletSession(base) : null;
-    const label = session ? shortAddress(session.wallet_address) : 'Connect Wallet';
-    [document.getElementById('walletNavBtn'), document.getElementById('walletNavBtnMobile')]
-      .forEach(btn => { if(btn) btn.textContent = label; });
-  }
+  function updateWalletUI(){ /* sign-in button now lives on the main page and in the gate below */ }
 
   async function signInWithWallet(base){
     const account = await connectWallet(base);
@@ -690,7 +681,7 @@ import { materialFor } from "./viewer-look.js";
     // covers every export format pulled from it. See
     // /export/{fmt}/{job_id}'s docstring in web_app.py.
     const session = getWalletSession(base);
-    if(!session){ alert('Your wallet session expired - reconnect to download.'); return; }
+    if(!session){ alert('Your session expired. Sign in on the main page, then try again.'); return; }
     const originalText = btn.textContent;
     btn.disabled = true;
     btn.textContent = 'Building...';
@@ -1576,30 +1567,6 @@ import { materialFor } from "./viewer-look.js";
     if(description) localStorage.setItem(HANDOFF_KEY, description);
   });
 
-  async function handleWalletNavClick(){
-    const base = getApiBase();
-    const existing = getWalletSession(base);
-    if(existing){
-      if(window.confirm(`Connected as ${existing.wallet_address}. Disconnect?`)){
-        clearWalletSession(base);
-        try {
-          await fetch(base + '/auth/logout', {
-            method: 'POST',
-            headers: { 'Authorization': 'Bearer ' + existing.session_id },
-          });
-        } catch(err){ /* already signed out client-side regardless */ }
-        updateWalletUI();
-      }
-      return;
-    }
-    try {
-      await signInWithWallet(base);
-    } catch(err){
-      alert('Wallet sign-in failed: ' + err.message);
-    }
-  }
-  document.getElementById('walletNavBtn').addEventListener('click', handleWalletNavClick);
-  document.getElementById('walletNavBtnMobile').addEventListener('click', handleWalletNavClick);
 
   updateWalletUI();
 })();
