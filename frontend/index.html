@@ -7,7 +7,7 @@
 <meta name="description" content="AI text-to-CAD for beginners and engineers. No CAD experience needed. Describe your idea, sketch it or upload a design, and NitoCAD turns it into a 3D model, checks it against your requirements with PASS, FAIL or UNKNOWN, and exports STEP, STL, IGES, DXF and PDF.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,500&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,500&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
   :root{
     --ink:#1C1C1E;
@@ -674,6 +674,7 @@
 <link rel="stylesheet" href="theme.css">
 <link rel="stylesheet" href="adam-look.css?v=25">
 <link rel="stylesheet" href="journey.css?v=1">
+<link rel="stylesheet" href="home.css?v=1">
 <script src="theme.js"></script>
 <!-- seo:begin -->
 <link rel="canonical" href="https://nitocad.vercel.app/">
@@ -744,7 +745,7 @@
 </script>
 <script defer src="/_vercel/insights/script.js"></script>
 </head>
-<body class="adam">
+<body class="adam home">
 
 <header>
   <nav class="wrap">
@@ -791,7 +792,7 @@
     </button>
     <div id="googleSignInDivMobile" style="display:none;"></div>
     <button id="accountNavBtnMobile" class="btn btn-ghost" type="button" style="display:none;"></button>
-    <a href="studio.html" class="btn btn-primary arrow">Build your first part free</a>
+    <a href="studio.html" class="btn btn-primary arrow">Start creating</a>
   </div>
 </header>
 <script>
@@ -811,43 +812,71 @@
 
 <main id="top">
 
-  <!-- 01 HERO -->
-  <section class="hero hero-v2">
-    <div class="wrap hero-grid">
-      <div class="hero-copy">
-      <div class="hero-meta">
-        <span class="badge"><i>N</i>AI text-to-CAD for six engineering disciplines</span>
-      </div>
-      <h1>Have an idea? Let&rsquo;s turn it into <em>something real.</em></h1>
-      <p class="lead">You don&rsquo;t need to know CAD or understand engineering drawings to get started. Simply describe what you want to create, share a sketch or upload an existing design. NitoCAD helps turn your idea into a 3D model, checks it against your requirements and prepares files you can use.</p>
-      <p class="hero-support">From your first idea to a design you can take to production.</p>
-      <div class="jx-idea">
-        <label for="description">What are we building today?</label>
-        <textarea id="description" placeholder="Describe it in your own words, or pick a type below for an example."></textarea>
-        <div class="jx-chips" id="jxKinds" role="group" aria-label="Pick a type to fill in an example">
-          <button type="button" class="jx-chip" aria-pressed="false" data-prompt="A mount for a 50 mm stepper motor, 4 holes, 5 mm fillets, 3 mm thick. Easy to make, and I need to reach the motor for maintenance.">Mechanical</button>
-          <button type="button" class="jx-chip" aria-pressed="false" data-prompt="A brake disc, 280 mm diameter, 22 mm thick, with 5 bolt holes on a 114.3 mm pattern.">Automotive</button>
-          <button type="button" class="jx-chip" aria-pressed="false" data-prompt="A mounting bracket for an avionics box, 100 x 80 mm base, 3 mm thick, with 4 holes.">Aerospace</button>
-          <button type="button" class="jx-chip" aria-pressed="false" data-prompt="A retaining wall 3 m long, 1.2 m high and 300 mm thick.">Civil &amp; buildings</button>
-          <button type="button" class="jx-chip" aria-pressed="false" data-prompt="An enclosure for a circuit board 60 x 40 mm, 25 mm tall, 2 mm walls, with a lid.">Circuits</button>
-          <button type="button" class="jx-chip" aria-pressed="false" data-prompt="A gear with 20 teeth, module 2, 10 mm thick, 5 mm bore. Replace this with your own idea.">Other</button>
+  <!-- 1. CREATE -->
+  <section class="home-hero" aria-labelledby="homeTitle">
+    <div class="home-w">
+      <h1 id="homeTitle">What would you like to create?</h1>
+      <p class="home-sub">Describe your idea. NitoCAD will help you turn it into a 3D design.</p>
+
+      <div class="composer" id="composer">
+        <label for="description" class="sr-only">Describe your design</label>
+        <textarea id="description" rows="4" placeholder="For example: a bracket for a 50 mm stepper motor with four mounting holes, easy to machine." autocomplete="off"></textarea>
+        <div class="cmp-files" id="cmpFiles" hidden></div>
+        <div class="cmp-bar">
+          <div class="cmp-tools">
+            <button type="button" class="cmp-tool" id="cmpAttach" title="Attach a sketch, image or CAD file">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5l-8.6 8.6a5.5 5.5 0 0 1-7.8-7.8l8.6-8.6a3.7 3.7 0 0 1 5.2 5.2l-8.6 8.6a1.8 1.8 0 0 1-2.6-2.6l7.9-7.9"/></svg>
+              Attach
+            </button>
+            <input type="file" id="cmpFile" hidden accept=".step,.stp,.iges,.igs,.brep,.pdf,.png,.jpg,.jpeg,.webp,.stl,.obj,.glb,.gltf,.3mf,.dxf,.svg,.kicad_pcb,.zip,.gbr,.ger,.gtl,.gbl,.gts,.gbs,.gto,.gbo,.gtp,.gbp,.gko,.gm1,.gm2,.gml">
+            <label class="cmp-select">
+              <span class="sr-only">Design category (optional)</span>
+              <select id="cmpKind">
+                <option value="">Category (optional)</option>
+                <option value="Mechanical">Mechanical</option>
+                <option value="Automotive">Automotive</option>
+                <option value="Aerospace">Aerospace</option>
+                <option value="Civil">Civil</option>
+                <option value="Buildings">Buildings</option>
+                <option value="Circuits">Circuits</option>
+              </select>
+            </label>
+          </div>
+          <button type="button" class="btn btn-primary" id="jxStart">Start creating</button>
         </div>
-        <div class="jx-idea-actions">
-          <button type="button" class="btn btn-primary arrow" id="jxStart">Start in the Workspace</button>
-          <button type="button" class="btn btn-white arrow" id="demoPreview">Preview free</button>
-        </div>
-        <p class="jx-idea-note"><span id="demoStatus" class="demo-status"></span>Preview is free with no account. The Workspace asks what it needs to know before it builds, and exports STEP, IGES, DXF and PDF.</p>
       </div>
-      <ul class="proof-list" aria-label="What sets NitoCAD apart">
-        <li><span class="k">01</span><span>Requirements stay attached and are re-checked on every version</span></li>
-        <li><span class="k">02</span><span>PASS, FAIL or UNKNOWN. UNKNOWN is never shown as a pass</span></li>
-        <li><span class="k">03</span><span>A failed build is refunded, not charged</span></li>
-        <li><span class="k">04</span><span>Mechanical, automotive, aerospace, civil, buildings, circuits</span></li>
-      </ul>
+
+      <p class="cmp-aux">
+        <button type="button" class="linkbtn" id="cmpExample">Try an example</button>
+        <button type="button" class="linkbtn" id="demoPreview">Free 3D preview, no account</button>
+        <span id="demoStatus" class="demo-status" role="status" aria-live="polite"></span>
+      </p>
+      <p class="cmp-note" id="cmpNote">No sizes needed yet. NitoCAD asks for anything it is missing. Sketches, photos and CAD files work too.</p>
+    </div>
+  </section>
+
+  <!-- 2. EXAMPLES -->
+  <section class="home-sec" id="examples">
+    <div class="home-w">
+      <h2>Or start from an example</h2>
+      <p class="sec-sub">Pick one to fill in the box above, then change it however you like.</p>
+      <div class="ex-grid">
+        <button type="button" class="ex" data-kind="Mechanical" data-prompt="A mount for a 50 mm stepper motor, 4 holes, 5 mm fillets, 3 mm thick. Easy to make, and I need to reach the motor for maintenance."><b>Motor mount</b><span>50 mm stepper motor, 4 holes, 3 mm thick</span><small>Mechanical</small></button>
+        <button type="button" class="ex" data-kind="Automotive" data-prompt="A brake disc, 280 mm diameter, 22 mm thick, with 5 bolt holes on a 114.3 mm pattern."><b>Brake disc</b><span>280 mm across, 5 bolt holes</span><small>Automotive</small></button>
+        <button type="button" class="ex" data-kind="Civil" data-prompt="A retaining wall 3 m long, 1.2 m high and 300 mm thick."><b>Retaining wall</b><span>3 m long, 1.2 m high</span><small>Civil</small></button>
+        <button type="button" class="ex" data-kind="Circuits" data-prompt="An enclosure for a circuit board 60 x 40 mm, 25 mm tall, 2 mm walls, with a lid."><b>Board enclosure</b><span>60 x 40 mm board, with a lid</span><small>Circuits</small></button>
       </div>
+    </div>
+  </section>
+
+  <!-- 3. REAL 3D PREVIEW -->
+  <section class="home-sec home-preview" id="preview">
+    <div class="home-w">
+      <h2>What NitoCAD builds</h2>
+      <p class="sec-sub">A live model from the NitoCAD viewer. Drag to turn it, or pick another part.</p>
       <div class="fig rig rig-wide">
         <div class="fig-top">
-          <span class="fig-cap" id="figCap">Fig. 01 &mdash; Gear</span>
+          <span class="fig-cap" id="figCap">Gear</span>
           <button type="button" class="bp-cutbtn mono" id="bpCut" aria-pressed="false">Cutaway</button>
         </div>
         <div class="bp-tabs" role="group" aria-label="Preview part">
@@ -874,12 +903,6 @@
             <path pathLength="1" d="M145.7 75.0 L155.9 77.2 L155.9 82.8 L145.7 85.0 L145.0 89.3 L154.1 94.6 L152.3 99.9 L141.9 98.9 L140.0 102.8 L146.9 110.6 L143.6 115.1 L134.0 111.0 L131.0 114.0 L135.1 123.6 L130.6 126.9 L122.8 120.0 L118.9 121.9 L119.9 132.3 L114.6 134.1 L109.3 125.0 L105.0 125.7 L102.8 135.9 L97.2 135.9 L95.0 125.7 L90.7 125.0 L85.4 134.1 L80.1 132.3 L81.1 121.9 L77.2 120.0 L69.4 126.9 L64.9 123.6 L69.0 114.0 L66.0 111.0 L56.4 115.1 L53.1 110.6 L60.0 102.8 L58.1 98.9 L47.7 99.9 L45.9 94.6 L55.0 89.3 L54.3 85.0 L44.1 82.8 L44.1 77.2 L54.3 75.0 L55.0 70.7 L45.9 65.4 L47.7 60.1 L58.1 61.1 L60.0 57.2 L53.1 49.4 L56.4 44.9 L66.0 49.0 L69.0 46.0 L64.9 36.4 L69.4 33.1 L77.2 40.0 L81.1 38.1 L80.1 27.7 L85.4 25.9 L90.7 35.0 L95.0 34.3 L97.2 24.1 L102.8 24.1 L105.0 34.3 L109.3 35.0 L114.6 25.9 L119.9 27.7 L118.9 38.1 L122.8 40.0 L130.6 33.1 L135.1 36.4 L131.0 46.0 L134.0 49.0 L143.6 44.9 L146.9 49.4 L140.0 57.2 L141.9 61.1 L152.3 60.1 L154.1 65.4 L145.0 70.7Z"/>
             <path pathLength="1" d="M106 80 A6 6 0 1 1 94 80 A6 6 0 1 1 106 80Z"/>
           </svg>
-          <ul class="bp-steps" id="bpSteps" aria-hidden="true">
-            <li><span class="bx"></span><span class="n">01</span>Describe &middot; plain English</li>
-            <li><span class="bx"></span><span class="n">02</span>Build &middot; B-rep solid</li>
-            <li><span class="bx"></span><span class="n">03</span>Check &middot; requirements, DFM</li>
-            <li><span class="bx"></span><span class="n">04</span>Export &middot; STEP, STL, DXF, PDF</li>
-          </ul>
           <div class="bp-prompt mono" aria-hidden="true"><span class="bp-gt">&gt;</span> <span id="bpPrompt"></span><i class="bp-caret"></i></div>
         </div>
         <div class="bp-title mono">
@@ -891,31 +914,54 @@
     </div>
   </section>
 
-
-  <!-- 02 FROM AN IDEA TO A DESIGN -->
-  <section class="sec how jx-welcome" id="how">
-    <div class="wrap">
-      <div class="sec-head">
-        <div>
-          <h2>From an idea to a design you can use.</h2>
-          <p>You don&rsquo;t need engineering experience. Just tell NitoCAD what you want to create.</p>
-        </div>
+  <!-- 4. HOW IT WORKS -->
+  <section class="home-sec" id="how">
+    <div class="home-w">
+      <h2>How it works</h2>
+      <p class="sec-sub">No CAD or engineering experience needed.</p>
+      <div class="how-grid">
+        <div class="how-step"><span class="n">1</span><h3>Start with your idea</h3><p>Describe it in everyday language, or upload a sketch, drawing or existing design.</p></div>
+        <div class="how-step"><span class="n">2</span><h3>Answer a few questions</h3><p>NitoCAD asks for the details it needs, like dimensions, materials and how it should work. You decide the requirements.</p></div>
+        <div class="how-step"><span class="n">3</span><h3>Watch it take shape</h3><p>Your description becomes a real 3D design, built in stages you can follow.</p></div>
+        <div class="how-step"><span class="n">4</span><h3>Make changes</h3><p>Want it bigger, lighter or different? Change it without losing earlier versions.</p></div>
+        <div class="how-step"><span class="n">5</span><h3>Check the design</h3><p>It is checked against your requirements, with clear PASS, FAIL or UNKNOWN results.</p></div>
+        <div class="how-step"><span class="n">6</span><h3>Get your files</h3><p>Export STEP, STL, IGES, DXF and PDF, ready for your next workflow.</p></div>
       </div>
-      <div class="jx-steps"><div class="jx-step"><span class="n">01</span><h3>Start with your idea</h3><p>Describe what you want to create in everyday language. You can also upload a sketch, drawing or existing design.</p></div><div class="jx-step"><span class="n">02</span><h3>Answer a few questions</h3><p>NitoCAD guides you through the details it needs, such as dimensions, materials and how your design should work. You decide the requirements.</p></div><div class="jx-step"><span class="n">03</span><h3>Watch your idea take shape</h3><p>Your description becomes a real 3D design, built in stages so you can follow its progress.</p></div><div class="jx-step"><span class="n">04</span><h3>Make changes with confidence</h3><p>Want something bigger, lighter or different? Make changes without losing your previous versions.</p></div><div class="jx-step"><span class="n">05</span><h3>Let NitoCAD check the design</h3><p>Your design is checked against your requirements. Get clear PASS, FAIL or UNKNOWN results. No pretending when something cannot be verified.</p></div><div class="jx-step"><span class="n">06</span><h3>Get your design files</h3><p>Export your finished design in formats such as STEP, STL, IGES, DXF and PDF, ready for your next workflow.</p></div></div>
     </div>
   </section>
 
-  <!-- WORKSPACE PREVIEW -->
-  <section class="sec" id="workspace">
-    <div class="wrap">
-      <div class="sec-head">
-        <div>
-          <h2>Inside the <em>Workspace.</em></h2>
-          <p>Every project keeps its requirements, checks, revisions and activity in one place. This is an example project. Try it.</p>
-        </div>
-        <span class="sec-idx">№ 01</span>
+  <!-- 5. VERIFICATION + MANUFACTURING -->
+  <section class="home-sec" id="build">
+    <div class="home-w">
+      <h2>Checked against your requirements</h2>
+      <p class="sec-sub">Every revision is checked, and a result is never rounded up.</p>
+      <div class="vf-trio">
+        <div class="vf"><span class="jx-tag jx-PASS">Pass</span><p>The requirement is met and NitoCAD measured it.</p></div>
+        <div class="vf"><span class="jx-tag jx-FAIL">Fail</span><p>The requirement is not met, so you know what to change.</p></div>
+        <div class="vf"><span class="jx-tag jx-UNKNOWN">Unknown</span><p>NitoCAD could not measure it, or an input is missing. It is never shown as a pass.</p></div>
       </div>
-      <p class="jx-ws-note">Example project with illustrative data. In the Workspace, checks and activity come from real engine results.</p>
+      <div class="cap-grid">
+        <div><h3>Requirements stay attached</h3><p>They are re-checked on every version, so a change cannot quietly break one.</p></div>
+        <div><h3>Revision history</h3><p>Every change is a new revision. The evidence for a revision stays with that revision.</p></div>
+        <div><h3>Manufacturing checks</h3><p>Fits and tolerances, manufacturability, overlap and mass, using typical shop guidelines.</p></div>
+        <div><h3>Your numbers stay yours</h3><p>Values you type are kept as written. If NitoCAD sees a problem, it flags it and leaves the value alone.</p></div>
+      </div>
+
+      <h3 class="sub-h">Six engineering disciplines</h3>
+      <div class="dsc-list">
+        <div class="dsc"><div class="dsc-top"><h3>Mechanical</h3><span class="jx-tag jx-status jx-s-Confirmed">Full checks</span></div><p>Machine parts, mounts, enclosures, shafts, gears and assemblies.</p><p class="lim">Checks use typical shop guidelines, not your shop&rsquo;s limits.</p></div>
+        <div class="dsc"><div class="dsc-top"><h3>Automotive</h3><span class="jx-tag jx-status jx-s-Unknown">Components</span></div><p>Wheel hubs, brake rotors, control arms, steering knuckles, pistons and flywheels.</p><p class="lim">A recognised bolt pattern is not a fitment claim.</p></div>
+        <div class="dsc"><div class="dsc-top"><h3>Aerospace</h3><span class="jx-tag jx-status jx-s-Unknown">Review-ready only</span></div><p>Airfoils, stability, engine cycle, mass and CG, with a signed review trail.</p><p class="lim">Ends at &ldquo;ready for engineering review&rdquo;. Never certification.</p></div>
+        <div class="dsc"><div class="dsc-top"><h3>Civil</h3><span class="jx-tag jx-status jx-s-Unknown">Screening level</span></div><p>Survey surfaces, alignments, earthworks, drainage and retaining wall stability.</p><p class="lim">Screening level. The limits are yours to set.</p></div>
+        <div class="dsc"><div class="dsc-top"><h3>Buildings</h3><span class="jx-tag jx-status jx-s-Unknown">Conceptual rules</span></div><p>Layouts, structure, schedules, drawing sets and rule checks.</p><p class="lim">Conceptual rules only. Never reports a full code pass.</p></div>
+        <div class="dsc"><div class="dsc-top"><h3>Circuits</h3><span class="jx-tag jx-status jx-s-Unknown">Light rule check</span></div><p>Place and route a board, then export a KiCad project and Gerbers.</p><p class="lim">A light design-rule check. Run a full one before you order boards.</p></div>
+      </div>
+      <p class="dsc-key">The tag shows what is available today. Green means a full build with checks. Amber means available up to the limit written under it.</p>
+
+      <details class="ws-demo">
+        <summary>Explore an example project <span>Requirements, checks and revisions</span></summary>
+        <div class="ws-body">
+<p class="jx-ws-note">Example project with illustrative data. In the Workspace, checks and activity come from real engine results.</p>
       <div id="jxWs">
         <div class="jx-ws-bar">
           <h3>Motor mounting bracket <span class="jx-tag mute" id="jxRev">Rev 01</span></h3>
@@ -951,15 +997,87 @@
           </div>
         </div>
       </div>
-      <div class="cta-pair" style="margin-top:28px;margin-bottom:0">
-        <a href="studio.html" class="btn btn-primary arrow">Start your own project</a>
+        </div>
+      </details>
+    </div>
+  </section>
+
+  <!-- 6. EXPORTS + FEATURES -->
+  <section class="home-sec" id="exports">
+    <div class="home-w">
+      <h2>Files you can use</h2>
+      <p class="sec-sub">Every export format is included in every plan.</p>
+      <ul class="fmt-list" aria-label="Export formats">
+        <li>STEP</li><li>STL</li><li>IGES</li><li>DXF</li><li>PDF</li><li>GLB</li><li>3MF</li><li>URDF</li>
+      </ul>
+      <div class="feat-list">
+        <div><h3>True B-rep solids</h3><p>Built on OpenCASCADE, so edges, holes and faces stay exact.</p></div>
+        <div><h3>Interactive 3D viewer</h3><p>Turn, zoom and inspect every part in the browser.</p></div>
+        <div><h3>Start from a file</h3><p>Attach a STEP file, a DXF, a sketch or a photo and build from it.</p></div>
+        <div><h3>Free preview</h3><p>See any part in 3D as an STL, with no account.</p></div>
+        <div><h3>Callable by AI agents</h3><p>Use NitoCAD from your own agents over MCP.</p></div>
+        <div><h3>No charge for a failed build</h3><p>If a generation fails, it does not count against your plan.</p></div>
+      </div>
+      <a class="more-link" href="exports.html">See all export formats</a>
+    </div>
+  </section>
+
+  <section class="home-sec" id="pricing">
+    <div class="home-w">
+      <h2>Pricing</h2>
+      <p class="sec-sub">Start free. Pro and Max add Expert AI and a weekly AI allowance. Subscribe for unlimited projects.</p>
+      <div class="plans">
+        <div class="plan">
+          <span class="tier">Free</span>
+          <div class="amt">$0</div>
+          <p>Describe a part and see it in 3D. A free STL preview, no account required.</p>
+          <a href="#top" class="btn btn-white" data-focus-composer>Preview free</a>
+        </div>
+        <div class="plan hot">
+          <span class="tier">Pro</span>
+          <div class="amt">$20<small>/month</small></div>
+          <p>Unlimited chats and projects, Standard and Expert AI, and an allowance that resets every week.</p>
+          <a href="pricing.html" class="btn btn-white">See Pro</a>
+        </div>
+        <div class="plan">
+          <span class="tier">Max</span>
+          <div class="amt">$80<small>/month</small></div>
+          <p>Everything in Pro, our most capable Expert model and a much larger weekly allowance.</p>
+          <a href="pricing.html" class="btn btn-white">See Max</a>
+        </div>
+      </div>
+      <p class="plans-foot">Subscriptions are billed in US dollars by card. You can also add AI usage with BOT inside the Workspace. Failed builds do not count against your plan. <a href="pricing.html">Full pricing</a></p>
+    </div>
+  </section>
+
+  <section class="home-sec" id="faq">
+    <div class="home-w">
+      <h2>Questions</h2>
+      <div class="faq" style="margin-top:14px">
+
+        <details><summary><span>Will it tell me when it is not sure?</span></summary><div class="ans">Yes. Every check answers PASS, FAIL or UNKNOWN. UNKNOWN means NitoCAD could not measure it or an input was missing, and it is never shown as a pass.</div></details>
+        <details><summary><span>Can it certify my design?</span></summary><div class="ans">No. Aerospace results stop at &ldquo;ready for engineering review&rdquo;, civil checks are screening level and building rules are conceptual. A licensed engineer must verify anything that gets built.</div></details>
+        <details><summary><span>Does it change the numbers I type?</span></summary><div class="ans">No. Every value you type is kept exactly as written. If NitoCAD sees a problem with a dimension, it flags it and leaves the value alone.</div></details>
+        <details><summary><span>Is the preview really free?</span></summary><div class="ans">Yes. The preview is a free STL mesh and needs no account. The STEP, IGES, DXF and PDF files are generated in the Workspace and included in every plan.</div></details>
+        <details><summary><span>What if a build fails?</span></summary><div class="ans">You are not charged. A failed generation is refunded.</div></details>
+        <details><summary><span>Can I start from my own file?</span></summary><div class="ans">Yes. Type the part in plain English, or attach a STEP file, a DXF or a sketch.</div></details>
+        <details><summary><span>Which formats can I export?</span></summary><div class="ans">STEP, STL, IGES, DXF, PDF, GLB, 3MF and URDF.</div></details>
+        <details><summary><span>How do I pay?</span></summary><div class="ans">Pro and Max are billed monthly in US dollars by card. <a href="pricing.html">See full pricing</a>.</div></details>
       </div>
     </div>
   </section>
 
+  <section class="home-end">
+    <div class="home-w">
+      <h2>Have an idea? Start with one sentence.</h2>
+      <a href="#top" class="btn btn-white" data-focus-composer>Start creating</a>
+    </div>
+  </section>
+
+</main>
 
 
-  <!-- Preview overlay -->
+<!-- Preview overlay -->
   <div class="pv-overlay" id="pvOverlay" role="dialog" aria-modal="true" aria-labelledby="pvTitle" hidden>
     <div class="pv-card">
       <div class="pv-head">
@@ -988,156 +1106,11 @@
         </div>
         <div class="pv-cta">
           <button type="button" class="btn btn-primary" id="pvGenerate">Generate files in the Workspace</button>
-          <button type="button" class="btn btn-ghost" id="pvDismiss">Back to demo</button>
+          <button type="button" class="btn btn-ghost" id="pvDismiss">Back</button>
         </div>
       </div>
     </div>
   </div>
-
-  
-  <!-- 05 HOW -->
-
-  <!-- 04 DISCIPLINES -->
-  <section class="sec build" id="build">
-    <div class="wrap">
-      <div class="sec-head">
-        <div>
-          <h2>One engineer. <em>Six disciplines.</em></h2>
-          <p>Each one is honest about where it stops.</p>
-        </div>
-        <span class="sec-idx">№ 02</span>
-      </div>
-      <div class="disc-grid">
-        <div class="disc"><span class="cap">01</span><span class="jx-tag jx-status jx-s-Confirmed">Full checks</span><h3>Mechanical</h3><p>Machine parts, mounts, enclosures, shafts, gears and assemblies. Fits and tolerances, manufacturability, overlap and mass checks.</p><p class="lim"><span class="cap">Limit</span> Checks use typical shop guidelines, not your shop&rsquo;s limits.</p></div>
-        <div class="disc"><span class="cap">02</span><span class="jx-tag jx-status jx-s-Unknown">Components</span><h3>Automotive</h3><p>Wheel hubs, brake rotors, control arms, steering knuckles, pistons and flywheels.</p><p class="lim"><span class="cap">Limit</span> A recognised bolt pattern is not a fitment claim.</p></div>
-        <div class="disc"><span class="cap">03</span><span class="jx-tag jx-status jx-s-Unknown">Review-ready only</span><h3>Aerospace</h3><p>Airfoils, stability, engine cycle, mass and CG, with a signed review trail.</p><p class="lim"><span class="cap">Limit</span> Ends at &ldquo;ready for engineering review&rdquo;. Never certification.</p></div>
-        <div class="disc"><span class="cap">04</span><span class="jx-tag jx-status jx-s-Unknown">Screening level</span><h3>Civil</h3><p>Survey surfaces, alignments, earthworks, drainage and retaining wall stability.</p><p class="lim"><span class="cap">Limit</span> Screening level. The limits are yours to set.</p></div>
-        <div class="disc"><span class="cap">05</span><span class="jx-tag jx-status jx-s-Unknown">Conceptual rules</span><h3>Buildings</h3><p>Layouts, structure, schedules, drawing sets and rule checks.</p><p class="lim"><span class="cap">Limit</span> Conceptual rules only. Never reports a full code pass.</p></div>
-        <div class="disc"><span class="cap">06</span><span class="jx-tag jx-status jx-s-Unknown">Light rule check</span><h3>Circuits</h3><p>Place and route a board, then export a KiCad project and Gerbers.</p><p class="lim"><span class="cap">Limit</span> A light design-rule check. Run a full one before you order boards.</p></div>
-      </div>
-      <p class="disc-key">The tag shows what is available today. Green means a full build with checks. Amber means available up to the limit written on the card.</p>
-    </div>
-  </section>
-
-  <!-- RECORD -->
-  <section class="sec" id="record">
-    <div class="wrap">
-      <div class="jx-record">
-        <div>
-          <h2>A design is more than a 3D file.</h2>
-          <p>It is the decisions, the changes and the evidence behind them. NitoCAD keeps that record for you, revision by revision, so the proof for a revision always stays with that revision.</p>
-          <p>A failed build is refunded, not charged.</p>
-          <a href="studio.html" class="btn btn-primary arrow">Open the Workspace</a>
-        </div>
-        <div class="jx-rec-card" aria-label="Example project history">
-          <div class="cap" style="margin-bottom:12px">Project history · example</div>
-          <div class="jx-tl">
-            <div>Project created from your description</div>
-            <div>Requirements captured: 2 confirmed, 2 proposed, 2 open</div>
-            <div>Revision 01 built and checked</div>
-            <div>Revision 02 proposed: lighter. Revision 01 untouched</div>
-            <div>You accepted revision 02. Evidence for revision 01 stays with revision 01</div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- 05 WHY -->
-  <section class="sec why" id="why">
-    <div class="wrap">
-      <div class="sec-head">
-        <div>
-          <h2>Why engineers <em>use it</em></h2>
-          <p>Say what the part must do. NitoCAD keeps it true as you change it.</p>
-        </div>
-        <span class="sec-idx">№ 03</span>
-      </div>
-      <div class="why-grid">
-        <div class="why-item"><h3>Your numbers stay yours</h3><p>Every value you type is kept exactly as written. If NitoCAD sees a problem with a dimension, it flags it and leaves the value alone.</p></div>
-        <div class="why-item"><h3>Unknown stays unknown</h3><p>When NitoCAD cannot measure something or an input is missing, it says so. It never fills the gap and calls it a pass.</p></div>
-        <div class="why-item"><h3>No charge for a failed build</h3><p>Preview every part free. If a generation fails, it does not count against your plan.</p></div>
-      </div>
-      <ul class="today-list">
-        <li><span class="k">01</span><span>Free STL preview, no account required</span></li>
-        <li><span class="k">02</span><span>STEP, IGES, DXF and PDF in every plan</span></li>
-        <li><span class="k">03</span><span>Callable by AI agents over MCP</span></li>
-      </ul>
-    </div>
-  </section>
-  <div class="band">
-    <div class="wrap stat-grid stat-grid-3">
-      <div class="stat"><b>True B-rep</b><span>Solids on OpenCASCADE</span></div>
-      <div class="stat"><b>1:1</b><span>Deterministic &amp; reusable</span></div>
-      <div class="stat"><b>STEP</b><span>Production-ready engineering files</span></div>
-    </div>
-  </div>
-
-  <!-- 06 PRICING -->
-  <section class="sec" id="pricing">
-    <div class="wrap">
-      <div class="sec-head">
-        <div>
-          <h2>Subscribe for <em>unlimited</em> projects.</h2>
-          <p>Start free. Pro and Max add Expert AI and a weekly AI allowance. Every export format is included.</p>
-        </div>
-        <span class="sec-idx">№ 04</span>
-      </div>
-      <div class="plans">
-        <div class="plan">
-          <span class="tier">Free</span>
-          <div class="amt">$0</div>
-          <p>Describe a part and see it in 3D. A free STL preview, no account required.</p>
-          <a href="#top" class="btn btn-white arrow">Preview free</a>
-        </div>
-        <div class="plan hot">
-          <span class="tier">Pro</span>
-          <div class="amt">$20<small>/month</small></div>
-          <p>Unlimited chats and projects, Standard and Expert AI, and an allowance that resets every week.</p>
-          <a href="pricing.html" class="btn btn-primary arrow">See Pro</a>
-        </div>
-        <div class="plan">
-          <span class="tier">Max</span>
-          <div class="amt">$80<small>/month</small></div>
-          <p>Everything in Pro, our most capable Expert model and a much larger weekly allowance.</p>
-          <a href="pricing.html" class="btn btn-white arrow">See Max</a>
-        </div>
-      </div>
-      <p class="plans-foot">Subscriptions are billed in US dollars by card. You can also add AI usage with BOT inside the Workspace. Failed builds do not count against your plan. <a href="pricing.html">Full pricing</a></p>
-    </div>
-  </section>
-
-  <!-- 07 FAQ -->
-  <section class="sec" id="faq">
-    <div class="wrap">
-      <div class="sec-head">
-        <div><h2>Questions, <em>answered.</em></h2></div>
-        <span class="sec-idx">№ 05</span>
-      </div>
-      <div class="faq">
-        <details><summary><span class="k">01</span><span>Will it tell me when it is not sure?</span></summary><div class="ans">Yes. Every check answers PASS, FAIL or UNKNOWN. UNKNOWN means NitoCAD could not measure it or an input was missing, and it is never shown as a pass.</div></details>
-        <details><summary><span class="k">02</span><span>Can it certify my design?</span></summary><div class="ans">No. Aerospace results stop at &ldquo;ready for engineering review&rdquo;, civil checks are screening level and building rules are conceptual. A licensed engineer must verify anything that gets built.</div></details>
-        <details><summary><span class="k">03</span><span>Does it change the numbers I type?</span></summary><div class="ans">No. Every value you type is kept exactly as written. If NitoCAD sees a problem with a dimension, it flags it and leaves the value alone.</div></details>
-        <details><summary><span class="k">04</span><span>Is the preview really free?</span></summary><div class="ans">Yes. The preview is a free STL mesh and needs no account. The STEP, IGES, DXF and PDF files are generated in the Workspace and included in every plan.</div></details>
-        <details><summary><span class="k">05</span><span>What if a build fails?</span></summary><div class="ans">You are not charged. A failed generation is refunded.</div></details>
-        <details><summary><span class="k">06</span><span>Can I start from my own file?</span></summary><div class="ans">Yes. Type the part in plain English, or attach a STEP file, a DXF or a sketch.</div></details>
-        <details><summary><span class="k">07</span><span>Which formats can I export?</span></summary><div class="ans">STEP, STL, IGES, DXF, PDF, GLB, 3MF and URDF.</div></details>
-        <details><summary><span class="k">08</span><span>How do I pay?</span></summary><div class="ans">Pro and Max are billed monthly in US dollars by card. <a href="pricing.html">See full pricing</a>.</div></details>
-      </div>
-    </div>
-  </section>
-
-  <section class="final">
-    <div class="wrap">
-      <h2>Put NitoCAD <em>to work.</em></h2>
-      <div class="cta-pair">
-        <a href="studio.html" class="btn btn-primary arrow">Build your first part free</a>
-        <a href="#top" class="btn btn-white arrow">Try a free preview</a>
-      </div>
-    </div>
-  </section>
-
-</main>
 
 <footer>
   <div class="wrap">
@@ -1203,7 +1176,6 @@
     }
 }
 </script>
-<div class="bp-dock" id="bpDock" aria-hidden="true"><div class="bp-dock-canvas"></div></div>
 <script type="module" src="hero-blueprint.js?v=25"></script>
 <script src="config.js"></script>
 <script src="auth.js"></script>
@@ -1395,6 +1367,7 @@ import { applyRealisticLook, prepareStlGeometry, buildPartObject } from "./viewe
   document.getElementById('pvClose').addEventListener('click', closeOverlay);
   document.getElementById('pvDismiss').addEventListener('click', closeOverlay);
   document.getElementById('pvGenerate').addEventListener('click', () => {
+    if (window.NitoHandoff) { window.NitoHandoff.go(); return; }
     try { sessionStorage.setItem('nito_prefill', descriptionEl.value.trim()); } catch (e) {}
     location.href = 'studio.html';
   });
@@ -1439,28 +1412,8 @@ import { applyRealisticLook, prepareStlGeometry, buildPartObject } from "./viewe
 
 <script>
 (function(){
-  var steps=[].slice.call(document.querySelectorAll('#bpSteps li'));
-  var cap=document.getElementById('figCap');
-  var tabs=[].slice.call(document.querySelectorAll('.bp-tab'));
-  if(!steps.length) return;
-  var reduce=window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  var timer=null,i=0;
-  function paint(n){steps.forEach(function(li,k){li.classList.toggle('on',k<n);});}
-  function run(){
-    clearTimeout(timer);
-    if(reduce){paint(steps.length);return;}
-    i=0;paint(0);
-    (function tick(){
-      i++;paint(i);
-      timer=setTimeout(i>=steps.length?function(){run();}:tick,i>=steps.length?5200:1000);
-    })();
-  }
-  window.addEventListener('bp-scene',function(e){
-    var n=('0'+(e.detail.index+1)).slice(-2);
-    if(cap) cap.innerHTML='Fig. '+n+' &mdash; '+e.detail.label;
-    run();
-  });
-  run();
+  var cap=document.getElementById('figCap'); if(!cap) return;
+  window.addEventListener('bp-scene',function(e){ cap.textContent=e.detail.label; });
 })();
 </script>
 
@@ -1472,6 +1425,6 @@ document.addEventListener('click',function(e){
   var f=document.querySelector('.fig'); if(f) f.scrollIntoView({behavior:'smooth',block:'start'});
 });
 </script>
-<script defer src="journey.js?v=1"></script>
+<script defer src="journey.js?v=2"></script>
 </body>
 </html>

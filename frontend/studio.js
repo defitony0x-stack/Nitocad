@@ -1714,6 +1714,17 @@ try {   // a prompt sent from the landing page preview
   const pre = sessionStorage.getItem("nito_prefill");
   if (pre) { $("input").value = pre; sessionStorage.removeItem("nito_prefill"); $("input").dispatchEvent(new Event("input")); }
 } catch (e) { /* storage blocked */ }
+/* A file attached on the landing page arrives through IndexedDB ("nito_handoff"). Picked up once, then removed. */
+async function consumeHandoff() {
+  try { const n = sessionStorage.getItem("nito_prefill_note"); if (n) { sessionStorage.removeItem("nito_prefill_note"); toast(n); } } catch (e) { /* storage blocked */ }
+  try {
+    const db = await new Promise((res, rej) => { const r = indexedDB.open("nito_handoff", 1); r.onupgradeneeded = () => r.result.createObjectStore("files"); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+    const rec = await new Promise((res, rej) => { const q = db.transaction("files", "readonly").objectStore("files").get("attachment"); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); });
+    await new Promise((res) => { const tx = db.transaction("files", "readwrite"); tx.objectStore("files").delete("attachment"); tx.oncomplete = tx.onerror = tx.onabort = () => res(); });
+    db.close();
+    if (rec && rec.blob && Date.now() - rec.t < 30 * 60 * 1000) await attachFile(new File([rec.blob], rec.name, { type: rec.type }));
+  } catch (e) { /* no hand-off file */ }
+}
 $("input").addEventListener("paste", (e) => { const f = [...((e.clipboardData && e.clipboardData.files) || [])][0]; if (f) { e.preventDefault(); attachFile(f); } });
 $("threadInner").addEventListener("click", (e) => {
   const rt = e.target.closest("[data-fretrace]");
@@ -2082,7 +2093,7 @@ function route() {
   if (!signed) { showGate(true); booted = false; Auth.initGoogle([$("gateGoogle"), $("gateSignUp")]).then(ok => { if (ok) $("gateBonus").style.display = ""; }); return; }
   showGate(false);
   if (Auth.showWelcome) Auth.showWelcome();
-  if (!booted) { booted = true; fillAccount(); refreshBalance(); loadConfig(); loadAi(); load().then(() => { if (!Auth.getSession() && !DEMO) return route(); renderAll(); if (location.hash === "#assembly") openAsm("start"); else if (/^#tool=/.test(location.hash)) openTool(location.hash.slice(6)); else if (!IS_TOUCH) $("input").focus(); }); }
+  if (!booted) { booted = true; fillAccount(); refreshBalance(); loadConfig(); loadAi(); load().then(() => { if (!Auth.getSession() && !DEMO) return route(); renderAll(); consumeHandoff(); if (location.hash === "#assembly") openAsm("start"); else if (/^#tool=/.test(location.hash)) openTool(location.hash.slice(6)); else if (!IS_TOUCH) $("input").focus(); }); }
 }
 Auth.onChange(() => route());
 route();

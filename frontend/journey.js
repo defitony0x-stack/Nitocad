@@ -1,6 +1,6 @@
 /* NitoCAD journey layer.
-   1) Hero idea box: each type chip fills in an example prompt; the box hands the description to the Workspace through the same
-      sessionStorage key ("nito_prefill") the free preview already uses.
+   1) Homepage composer: description, optional attachment, optional category and examples. "Start creating" hands the text to the
+      Workspace through the same sessionStorage key ("nito_prefill") the free preview already uses, and the attached file through IndexedDB.
    2) Workspace preview: a self-contained example project. All data here is
       illustrative and labelled as such on the page. It makes no network calls. */
 (function () {
@@ -8,21 +8,143 @@
   var $ = function (id) { return document.getElementById(id); };
   function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
 
-  /* ---------- 1. idea box ---------- */
+  /* ---------- 1. composer ---------- */
   var idea = $("description");
+  var kindSel = $("cmpKind");
+  var fileInput = $("cmpFile");
+  var fileRow = $("cmpFiles");
+  var noteEl = $("cmpNote");
+  var composer = $("composer");
+  var MAX_MB = 15;                                   /* same limit as the Workspace */
+  var OK_EXT = /\.(step|stp|iges|igs|brep|pdf|png|jpe?g|webp|stl|obj|glb|gltf|3mf|dxf|svg|kicad_pcb|zip|gbr|ger|gtl|gbl|gts|gbs|gto|gbo|gtp|gbp|gko|gm1|gm2|gml|g\d+)$/i;
+  var attached = null;
+  var DEFAULT_NOTE = noteEl ? noteEl.textContent : "";
+
+  function setNote(msg, isErr) {
+    if (!noteEl) return;
+    noteEl.textContent = msg || DEFAULT_NOTE;
+    noteEl.style.color = isErr ? "#f0a36f" : "";
+  }
+  function fmtBytes(n) { return n < 1048576 ? Math.max(1, Math.round(n / 1024)) + " KB" : (n / 1048576).toFixed(1) + " MB"; }
+  function grow() { idea.style.height = "auto"; idea.style.height = Math.min(idea.scrollHeight + 2, 360) + "px"; }
+
+  /* The file itself travels to the Workspace through IndexedDB (sessionStorage is too small for CAD files). */
+  function openDb() {
+    return new Promise(function (res, rej) {
+      var r = indexedDB.open("nito_handoff", 1);
+      r.onupgradeneeded = function () { r.result.createObjectStore("files"); };
+      r.onsuccess = function () { res(r.result); };
+      r.onerror = function () { rej(r.error); };
+    });
+  }
+  function dbOp(mode, fn) {
+    return openDb().then(function (db) {
+      return new Promise(function (res, rej) {
+        var tx = db.transaction("files", mode);
+        fn(tx.objectStore("files"));
+        tx.oncomplete = function () { db.close(); res(true); };
+        tx.onerror = tx.onabort = function () { db.close(); rej(tx.error); };
+      });
+    });
+  }
+  function saveFile(f) { return dbOp("readwrite", function (s) { s.put({ name: f.name, type: f.type, size: f.size, blob: f, t: Date.now() }, "attachment"); }); }
+  function dropFile() { return dbOp("readwrite", function (s) { s.delete("attachment"); }); }
+
+  function drawFile() {
+    if (!fileRow) return;
+    fileRow.innerHTML = "";
+    if (!attached) { fileRow.hidden = true; return; }
+    var chip = document.createElement("div"); chip.className = "cmp-chip";
+    chip.innerHTML = "<span></span><small></small><button type=\"button\" aria-label=\"Remove attachment\"><svg width=\"12\" height=\"12\" viewBox=\"0 0 12 12\" aria-hidden=\"true\"><path d=\"M2.5 2.5l7 7M9.5 2.5l-7 7\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\"/></svg></button>";
+    chip.querySelector("span").textContent = attached.name;
+    chip.querySelector("small").textContent = fmtBytes(attached.size);
+    chip.querySelector("button").addEventListener("click", function () { attached = null; drawFile(); setNote(); idea.focus(); });
+    fileRow.appendChild(chip);
+    fileRow.hidden = false;
+  }
+  function setFile(f) {
+    if (!f) return;
+    if (!OK_EXT.test(f.name)) { setNote("NitoCAD can open STEP, IGES, DXF, SVG, PDF, images, meshes and KiCad or Gerber files.", true); return; }
+    if (f.size > MAX_MB * 1048576) { setNote("That file is over " + MAX_MB + " MB.", true); return; }
+    if (!f.size) { setNote("That file is empty.", true); return; }
+    attached = f; drawFile(); setNote("Attached. NitoCAD reads it in the Workspace.");
+  }
+
+  /* examples: the cards on the page plus two more for "Try an example" */
+  var EXTRA = [
+    { kind: "Aerospace", text: "A mounting bracket for an avionics box, 100 x 80 mm base, 3 mm thick, with 4 holes." },
+    { kind: "", text: "A gear with 20 teeth, module 2, 10 mm thick, 5 mm bore." }
+  ];
+  function pool() {
+    var list = Array.prototype.map.call(document.querySelectorAll(".ex[data-prompt]"), function (b) {
+      return { kind: b.getAttribute("data-kind") || "", text: b.getAttribute("data-prompt") };
+    });
+    return list.concat(EXTRA);
+  }
+  function useExample(ex) {
+    idea.value = ex.text;
+    if (kindSel) kindSel.value = ex.kind || "";
+    grow(); idea.focus();
+    var r = composer.getBoundingClientRect();
+    if (r.top < 60 || r.bottom > window.innerHeight) composer.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+
   if (idea) {
-    var chipWrap = $("jxKinds");
-    chipWrap.addEventListener("click", function (e) {
-      var b = e.target.closest(".jx-chip"); if (!b) return;
-      Array.prototype.forEach.call(chipWrap.querySelectorAll(".jx-chip"), function (c) { c.setAttribute("aria-pressed", c === b ? "true" : "false"); });
-      idea.value = b.getAttribute("data-prompt") || "";
-      idea.focus();
+    idea.addEventListener("input", grow);
+    idea.addEventListener("keydown", function (e) { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); go(); } });
+    idea.addEventListener("paste", function (e) {
+      var f = e.clipboardData && e.clipboardData.files && e.clipboardData.files[0];
+      if (f) { e.preventDefault(); setFile(f); }
     });
-    $("jxStart").addEventListener("click", function () {
-      var text = idea.value.trim();
-      try { if (text) sessionStorage.setItem("nito_prefill", text); } catch (e) {}
-      location.href = "studio.html";
+
+    if ($("cmpAttach")) $("cmpAttach").addEventListener("click", function () { fileInput.click(); });
+    if (fileInput) fileInput.addEventListener("change", function () { var f = fileInput.files && fileInput.files[0]; fileInput.value = ""; setFile(f); });
+
+    ["dragenter", "dragover"].forEach(function (ev) { composer.addEventListener(ev, function (e) {
+      if (e.dataTransfer && Array.prototype.indexOf.call(e.dataTransfer.types, "Files") >= 0) { e.preventDefault(); composer.classList.add("drag"); }
+    }); });
+    ["dragleave", "drop"].forEach(function (ev) { composer.addEventListener(ev, function () { composer.classList.remove("drag"); }); });
+    composer.addEventListener("drop", function (e) {
+      var f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+      if (f) { e.preventDefault(); setFile(f); }
     });
+
+    $("cmpExample").addEventListener("click", function () {
+      var all = pool(), sel = kindSel ? kindSel.value : "", cur = idea.value.trim();
+      var fresh = function (list) { return list.filter(function (x) { return x.text !== cur; }); };
+      var list = fresh(sel ? all.filter(function (x) { return x.kind === sel; }) : all);   /* same category first, never the text already in the box */
+      if (!list.length) list = fresh(all);
+      if (!list.length) list = all;
+      useExample(list[Math.floor(Math.random() * list.length)]);
+    });
+    Array.prototype.forEach.call(document.querySelectorAll(".ex[data-prompt]"), function (b) {
+      b.addEventListener("click", function () { useExample({ kind: b.getAttribute("data-kind") || "", text: b.getAttribute("data-prompt") }); });
+    });
+
+    /* hand-off to the Workspace: text through sessionStorage (the key the free preview already uses), file through IndexedDB */
+    var going = false;
+    function go() {
+      if (going) return; going = true;
+      var text = idea.value.trim(), kind = kindSel ? kindSel.value : "";
+      var out = text && kind ? text + "\n\nCategory: " + kind : text;
+      try { if (out) sessionStorage.setItem("nito_prefill", out); } catch (e) {}
+      var finish = function () { location.href = "studio.html"; };
+      var saved = attached ? saveFile(attached) : dropFile();
+      var timer = setTimeout(finish, 1500);
+      saved.then(function () { clearTimeout(timer); finish(); }, function () {
+        clearTimeout(timer);
+        if (attached) { try { sessionStorage.setItem("nito_prefill_note", "Your browser would not pass " + attached.name + " along. Attach it again here."); } catch (e) {} }
+        finish();
+      });
+    }
+    $("jxStart").addEventListener("click", go);
+    window.NitoHandoff = { go: go };
+
+    /* links that mean "take me to the box" */
+    Array.prototype.forEach.call(document.querySelectorAll("[data-focus-composer]"), function (a) {
+      a.addEventListener("click", function (e) { e.preventDefault(); window.scrollTo({ top: 0, behavior: "smooth" }); setTimeout(function () { idea.focus({ preventScroll: true }); }, 250); });
+    });
+    grow();
   }
 
   /* ---------- 2. Workspace preview ---------- */
