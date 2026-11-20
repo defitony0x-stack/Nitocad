@@ -126,6 +126,8 @@ const Backend = {
   }
 };
 
+/* The send button is only unavailable while a message is being worked on. An empty box never greys it out. */
+function syncSend() { const b = $("send"); if (b) b.disabled = !!S.busy; }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 function flatParams(p) {
   const out = {};
@@ -1452,7 +1454,7 @@ async function followJob(c, job) {
 /* Rejoin a build that was still running when this chat was opened (the page was closed or reloaded meanwhile). */
 async function resumeJob(c, job) {
   if (S.busy || !job) return;
-  S.busy = true; $("send").disabled = true;
+  S.busy = true; syncSend();
   const out = await followJob(c, job);
   c.activeJob = null;
   await applyOut(c, out, null, false);
@@ -1475,17 +1477,91 @@ async function recoverTurn(c, knownCount) {
   }
   return null;
 }
+
+/* ============================================================ ask before building
+   A vague request ("I want to build a car", "a bridge", "Tesla") is not built straight away. The first message of a chat gets
+   a short set of questions for its field, shown with the questions card (pick any, add details, Build or Skip). The original
+   request is kept in c.pendingBrief and sent to the server together with the answers, so nothing is lost. This works in every
+   field; the question sets below only decide which questions are asked. */
+const INTAKE_FIELDS = [
+  ["vehicle", /\b(car|cars|truck|van|bus|suv|sedan|coupe|motorbike|motorcycle|bike|scooter|vehicle|tesla|toyota|honda|ford|bmw|audi|mercedes|ferrari|porsche|lamborghini|tractor|trailer|kart)\b/i, [
+    ["How much of it do you want?", ["Whole body, shape only", "Chassis or frame", "Wheels and brakes", "Engine or drivetrain", "Interior"]],
+    ["What size?", ["Real size (1:1)", "Scale model 1:10", "Scale model 1:24", "Not sure"]],
+    ["How detailed?", ["Simple shape", "Detailed outside", "Main parts inside too"]]]],
+  ["aero", /\b(aircraft|airplane|plane|jet|wing|fuselage|rocket|satellite|cubesat|drone|uav|helicopter|propeller|turbine blade|nozzle)\b/i, [
+    ["What do you want built?", ["One part (wing, bracket, fitting)", "A whole airframe, shape only", "An assembly of parts"]],
+    ["What size?", ["Real size", "Scale model", "Not sure"]],
+    ["What is it made of?", ["Aluminum", "Composite", "Titanium", "Printed plastic", "Not sure"]]]],
+  ["civil", /\b(house|building|bridge|wall|tunnel|dam|road|tower|beam|column|foundation|slab|staircase|stairs|roof|warehouse|shed|retaining)\b/i, [
+    ["What do you need?", ["Structure shape only", "Structure with reinforcement", "A single element (beam, slab, wall)"]],
+    ["Which units?", ["Metres", "Millimetres", "Feet and inches"]],
+    ["What is it made of?", ["Reinforced concrete", "Steel", "Timber", "Masonry", "Not sure"]]]],
+  ["electronics", /\b(pcb|circuit|board|arduino|raspberry|sensor|enclosure|housing|battery pack|esp32|led)\b/i, [
+    ["What do you need?", ["An enclosure for a board", "A board layout", "A mount or bracket for parts"]],
+    ["How will it be made?", ["3D printed", "CNC machined", "Injection molded", "Sheet metal"]],
+    ["Does it need openings?", ["USB or power port", "Vents", "Screen or buttons", "None"]]]],
+  ["mechanical", /\b(gear|shaft|bracket|bolt|nut|screw|bearing|pulley|spring|flange|pipe|valve|pump|piston|cam|lever|hinge|mount|clamp|adapter|coupling|housing|motor|engine|machine)\b/i, [
+    ["How will it be made?", ["CNC machined", "3D printed", "Sheet metal", "Cast or molded", "Not sure"]],
+    ["What is it made of?", ["Aluminum", "Steel", "Stainless steel", "Plastic", "Not sure"]],
+    ["What matters most?", ["Strength", "Low weight", "Low cost", "Easy to make"]]]]
+];
+const INTAKE_GENERIC = [
+  ["What is it for?", ["Real product", "Prototype", "School or learning", "Just exploring"]],
+  ["How will it be made?", ["3D printed", "CNC machined", "Sheet metal", "Not sure"]],
+  ["What size?", ["Small (hand sized)", "Medium (desk sized)", "Large (room sized or bigger)", "I will give exact sizes"]]];
+function isSpecific(text) {
+  const t = String(text || "");
+  if (/^\s*just build it/i.test(t)) return true;
+  const unit = (t.match(/\d+(?:\.\d+)?\s*(?:mm|cm|m|metres?|meters?|in|inch(?:es)?|ft|feet|teeth|holes?|bolts?|deg|degrees|kg|[x×])\b/gi) || []).length + (t.match(/\d+\s*[x×]\s*\d+/g) || []).length;
+  const bare = (t.match(/\d+(?:\.\d+)?/g) || []).length;
+  return unit >= 2 || bare >= 3;
+}
+function intakeFor(text, c) {
+  if (!text || c.messages.some((m) => m.role === "assistant")) return null;   // only the first turn of a chat
+  if (isSpecific(text)) return null;
+  const hit = INTAKE_FIELDS.find(([, re]) => re.test(text));
+  const qs = (hit ? hit[2] : INTAKE_GENERIC).map(([question, options]) => ({ question, options, card: true }));
+  const named = hit && hit[0] === "vehicle" ? " If it is a specific model, tell me which one and the year, and any sizes you already know." : " Add any sizes you already know.";
+  return { reply: "Before I build anything, a few quick questions so I do not guess. Pick any that apply, add details below, then press Build." + named + " If you would rather I choose sensible defaults, press Skip.", choices: qs };
+}
+function describeFileReply(k, name) {
+  const dims = (k.dims || []).filter((d) => d.value_mm != null);
+  let t = `I received ${name}.`;
+  if (k.description) t += " " + k.description;
+  else if (k.summary) t += " " + k.summary;
+  else t += " I have not built anything from it.";
+  if (dims.length) t += " I read these sizes from it: " + dims.map((d) => `${d.label} ${num2(d.value_mm)} mm`).join(", ") + ". Please tell me if any are wrong.";
+  else t += " I could not find any sizes in it. What are the overall length, width and height, in mm?";
+  t += " What would you like me to do with it?";
+  return t;
+}
+
 async function send(text, templateId, importId) {
   text = (text || "").trim();
   if (!text || S.busy) return;
   let c = chat();
   if (!c) { c = newChat(); S.activeId = c.id; }
+  if (!templateId && !importId) {
+    const ask = intakeFor(text, c);
+    if (ask) {   // too vague to build: ask first, remember the request
+      c.messages.push({ id: uid(), role: "user", text });
+      c.pendingBrief = text;
+      if (c.title === "New design") c.title = text.length > 44 ? text.slice(0, 42).trim() + "..." : text;
+      c.messages.push({ id: uid(), role: "assistant", text: ask.reply, choices: ask.choices });
+      c.updatedAt = Date.now(); $("input").value = ""; autosize(); save(); renderThread(); renderSide(); $("chatTitle").textContent = c.title; scrollEnd(true); syncSend();
+      return;
+    }
+  }
+  let outgoing = text;
+  if (c.pendingBrief && !templateId && !importId) {
+    outgoing = /^\s*just build it/i.test(text) ? c.pendingBrief + "\n\nUse sensible defaults for anything I did not say." : c.pendingBrief + "\n\nMy answers: " + text;
+    c.pendingBrief = null;
+  }
   c.messages.push({ id: uid(), role: "user", text });
   if (c.title === "New design") c.title = text.length > 44 ? text.slice(0, 42).trim() + "..." : text;
   c.updatedAt = Date.now();
   if (!templateId && !importId) { $("input").value = ""; autosize(); }
-  $("send").disabled = true;
-  S.busy = true; renderThread(); renderSide(); $("chatTitle").textContent = c.title; scrollEnd(false); showWorking();
+  S.busy = true; syncSend(); renderThread(); renderSide(); $("chatTitle").textContent = c.title; scrollEnd(false); showWorking();
   let out;
   try {
     if (!DEMO && !c.remote) {   // the first message creates the chat on the server
@@ -1494,7 +1570,7 @@ async function send(text, templateId, importId) {
       else if (!created.ok) { out = { reply: created.detail || "I could not start a new chat. Please try again.", error: true }; }
       else { c.id = created.data.id; c.remote = true; S.activeId = c.id; }
     }
-    if (!out) out = importId ? await Backend.startImport({ chat: c, importId }) : templateId ? await Backend.applyTemplate({ chat: c, id: templateId, text }) : await Backend.send({ chat: c, text });
+    if (!out) out = importId ? await Backend.startImport({ chat: c, importId }) : templateId ? await Backend.applyTemplate({ chat: c, id: templateId, text }) : await Backend.send({ chat: c, text: outgoing });
   } catch (e) { out = { reply: "Something went wrong on my side. Please try again.", error: true }; }
   if (out.error && c.remote && [0, 409, 502, 503, 504].includes(out.status)) {
     const known = c.messages.length - 1;   // server messages before this one; the failed user message is the last local entry
@@ -1505,7 +1581,7 @@ async function send(text, templateId, importId) {
       const lp = lastPart(c); if (lp) S.activePartId = lp.id;
       c.updatedAt = Date.now(); save(); refreshAi(); renderThread(); renderSide(); scrollEnd(true);
       if (lp) { openCanvas(lp.id, "specs"); if (innerWidth <= 1180) closeCanvas(); }
-      $("send").disabled = !$("input").value.trim();
+      syncSend();
       return;
     }
     if (back && back.authExpired) out = back;
@@ -1531,7 +1607,7 @@ async function applyOut(c, out, text, popOnExpire) {
   refreshAi();
   renderThread(); renderSide(); scrollEnd(true);
   if (out.part) { openCanvas(out.part.id, "specs"); if (innerWidth <= 1180) closeCanvas(); }
-  $("send").disabled = !$("input").value.trim();
+  syncSend();
 }
 
 
@@ -1697,13 +1773,17 @@ async function attachFile(file) {
     const id = uid(); const card = fileCardFromServer(file, data);
     fileStore[id] = { description: card.description, buffer: data.stl_base64 ? b64ToBuf(data.stl_base64) : null, importId: card.importId || null, name: card.name,
                       file: (card.trace || card.kindRaw === "pdf") ? file : null };   // kept in this tab only, so a picture can be traced again at a real size
-    c.messages.push({ id, role: "assistant", text: "", fileCard: card }); c.updatedAt = Date.now();
+    c.messages.push({ id, role: "assistant", text: "", fileCard: card });
+    /* Never build straight from a file: say what it is, ask for sizes, ask what to do. */
+    c.messages.push({ id: uid(), role: "assistant", text: describeFileReply(card, card.name || file.name), choices: [{ question: "What should I do with it?", options: ["Build a 3D part from it", "Trace it as a flat outline", "Just describe it"],
+      say: ["Build a 3D part from this file. Use the sizes you read, and ask me about any that are missing before you build.", "Trace the outline of this file as a flat shape. Ask me for the real size first.", "Describe what you see in this file in more detail. Do not build anything."] }] });
+    c.updatedAt = Date.now();
     renderThread(); scrollEnd(true);
     if (fileStore[id].buffer) showInViewer(stlObject(fileStore[id].buffer), card.name);
   } catch (e) {
     hideWorking(); S.busy = false; bad("I could not open that file. It may be damaged or in a variant I cannot read.");
   }
-  $("send").disabled = !$("input").value.trim();
+  syncSend();
 }
 $("attach").addEventListener("click", () => $("fileInput").click());
 $("fileInput").addEventListener("change", (e) => { const f = e.target.files && e.target.files[0]; e.target.value = ""; attachFile(f); });
@@ -1732,7 +1812,7 @@ $("threadInner").addEventListener("click", (e) => {
   const ed = e.target.closest("[data-fedit]");
   if (ed) { const f = fileStore[ed.dataset.fedit]; if (f && f.importId) send("Edit " + (f.name || "this file") + " as a part", null, f.importId); return; }
   const use = e.target.closest("[data-fuse]");
-  if (use) { const f = fileStore[use.dataset.fuse]; if (f && f.description) { $("input").value = f.description; autosize(); $("send").disabled = false; $("input").focus(); toast("Edit the description if needed, then send it."); } return; }
+  if (use) { const f = fileStore[use.dataset.fuse]; if (f && f.description) { $("input").value = f.description; autosize(); syncSend(); $("input").focus(); toast("Edit the description if needed, then send it."); } return; }
   const view = e.target.closest("[data-fview]");
   if (view) { const f = fileStore[view.dataset.fview]; if (f && f.buffer) showInViewer(stlObject(f.buffer), "File preview"); }
 });
@@ -1855,9 +1935,9 @@ document.addEventListener("keydown", (e) => { if (e.key === "Escape") { if (!$("
 
 /* ============================================================ composer */
 function autosize() { const t = $("input"); t.style.height = "auto"; t.style.height = Math.min(t.scrollHeight, 180) + "px"; }
-$("input").addEventListener("input", () => { autosize(); $("send").disabled = S.busy || !$("input").value.trim(); });
+$("input").addEventListener("input", () => { autosize(); syncSend(); });
 $("input").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey && !IS_TOUCH) { e.preventDefault(); send($("input").value); } });
-$("send").addEventListener("click", () => send($("input").value));
+$("send").addEventListener("click", () => { if (!$("input").value.trim()) { $("input").focus(); return; } send($("input").value); });
 
 /* ============================================================ events */
 function openSide() { $("side").classList.add("open"); $("scrim").classList.add("on"); }
